@@ -10,7 +10,7 @@ const args = process.argv.slice(2);
 const opt = (name, def) => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] : def; };
 const dir = __dirname;
 const outMp4 = opt('mp4', path.join(dir, 'avto-zapchasti-sestram-reel.mp4'));
-const audio = opt('audio', path.join(dir, 'audio.wav'));
+const audio = opt('audio', path.join(dir, 'audio-sfx.wav'));
 const framesArg = opt('frames', null);
 
 (async () => {

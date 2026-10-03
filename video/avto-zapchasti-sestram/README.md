@@ -1,6 +1,13 @@
 # Моушен-ролик «Авто запчасти сёстрам»
 
-Вертикальный ролик 9:16, 1080×1920, 30 fps, 15 секунд, со звуком: `avto-zapchasti-sestram-reel.mp4`.
+Вертикальный ролик 9:16, 1080×1920, 30 fps, 15 секунд.
+
+| Файл | Звук |
+|---|---|
+| `avto-zapchasti-sestram-reel.mp4` | **без музыки**, только звуковые эффекты (свуши, удары, поп-звуки, клик, аккорд подписки) |
+| `avto-zapchasti-sestram-reel-silent.mp4` | полностью без звука, под свою музыку |
+
+Видеоряд в обоих файлах одинаковый.
 
 **Важно:** это черновик. Канал `t.me/avto_zapchasti_sestram` из облачного окружения был недоступен, поэтому
 ролик собран по названию канала, а не по его постам. Фирменные цвета, тексты и конкретные обещания
@@ -28,8 +35,9 @@
 
 ```bash
 npm i playwright            # один раз; нужен Chromium (npx playwright install chromium)
-python3 audio.py            # numpy → audio.wav (бит, свуши, поп-звуки, аккорд подписки)
-node render.cjs             # кадры → ffmpeg → avto-zapchasti-sestram-reel.mp4 (~2 мин)
+python3 audio.py --no-music # только эффекты → audio-sfx.wav
+python3 audio.py            # с музыкой (бит 128 BPM, бас, арпеджио) → audio.wav
+node render.cjs --audio audio-sfx.wav   # кадры → ffmpeg → avto-zapchasti-sestram-reel.mp4 (~2 мин)
 
 # отдельные кадры для проверки:
 node render.cjs --frames 40,180,300 --out /tmp/shots

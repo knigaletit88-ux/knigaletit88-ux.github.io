@@ -1,9 +1,14 @@
 """Саунд-дизайн ролика: 128 BPM, 15 c. Синтез на numpy, без внешних сэмплов.
 Тайминги совпадают с index.html (B = длина бита, сцены по 6/8/6/4/8 битов).
-    python3 audio.py  ->  audio.wav
+    python3 audio.py             ->  audio.wav      (с музыкой: бит, бас, арпеджио + эффекты)
+    python3 audio.py --no-music  ->  audio-sfx.wav  (только звуковые эффекты, без музыки)
 """
+import sys
 import wave
 import numpy as np
+
+MUSIC = '--no-music' not in sys.argv
+OUT = 'audio.wav' if MUSIC else 'audio-sfx.wav'
 
 SR = 44100
 BPM = 128
@@ -136,8 +141,9 @@ beat = lambda b: b * B
 
 # ---------------- сцена 1 (0–6 бит): тревога → «без паники» ----------------
 riser(0, beat(3), .9)
-for b, g in ((0, .7), (1, .6), (2, .45)):
-    kick(g, beat(b))
+if MUSIC:
+    for b, g in ((0, .7), (1, .6), (2, .45)):
+        kick(g, beat(b))
 boom(1.0, beat(3))                                   # глитч + «БЕЗ»
 blip(1500, 300, .5, beat(1))                         # слэм ЗАГОРЕЛАСЬ
 blip(1500, 300, .5, beat(1.5))                       # слэм ЛАМПОЧКА?
@@ -149,7 +155,7 @@ for k in range(4):                                   # щелчки-«лампа
 # ---------------- грув: с 4-го бита ----------------
 chords = [55.0, 55.0, 65.41, 49.0]                   # A1 A1 C2 G1
 arp = [440, 523.25, 659.25, 783.99, 659.25, 523.25, 587.33, 523.25]
-for b in range(4, 32):
+for b in (range(4, 32) if MUSIC else ()):
     t0 = beat(b)
     vol = min(1.0, (b - 3) / 3)
     if b < 6 or b != 24:
@@ -191,7 +197,7 @@ for i in range(3):
 # ---------------- сцена 4 ----------------
 for i in range(8):
     tick(.8, beat(20) + i * .04, 1500 + i * 130)
-for k in range(8):                                    # снейр-ролл в дроп
+for k in (range(8) if MUSIC else ()):                 # снейр-ролл в дроп
     snare(.35 + .08 * k, beat(22) + k * B / 2 * 1.0 if k < 4 else beat(23) + (k - 4) * B / 4)
 blip(900, 1800, .6, beat(20.5))
 boom(.55, beat(21), d=.5, f=60)                       # ВСЁ ДЛЯ ТВОЕЙ
@@ -199,7 +205,8 @@ boom(.8, beat(21.5), d=.8, f=48)                      # МАШИНЫ
 
 # ---------------- сцена 5: дроп и призыв ----------------
 boom(1.0, beat(24) + .02, d=1.4, f=42)
-hat(1.0, beat(24), open_=True)
+if MUSIC:
+    hat(1.0, beat(24), open_=True)
 blip(600, 1500, .7, beat(24.5))                       # значок
 for i in range(12):
     tick(.8, beat(25.5) + i * .035, 2200 + i * 80)
@@ -222,9 +229,9 @@ mix *= fade[:, None]
 mix = np.tanh(mix * 1.15) / np.tanh(1.15)             # мягкий лимитер
 mix *= .89 / np.max(np.abs(mix))
 pcm = (mix * 32767).astype('<i2')
-with wave.open('audio.wav', 'wb') as w:
+with wave.open(OUT, 'wb') as w:
     w.setnchannels(2)
     w.setsampwidth(2)
     w.setframerate(SR)
     w.writeframes(pcm.tobytes())
-print('audio.wav', DUR, 'c')
+print(OUT, DUR, 'c', '(с музыкой)' if MUSIC else '(без музыки)')
