@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>6 жидкостей в автомобиле</title>
+<style>html,body{margin:0;background:#000;width:1080px;height:1920px;overflow:hidden}svg{display:block}
+text{font-family:'Inter','Noto Color Emoji',sans-serif}</style></head>
+<body><svg id="root" width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg"></svg>
+<script src="core.js"></script>
+<script src="s0.js"></script>
+<script src="s1.js"></script>
+<script src="s2.js"></script>
+<script src="s3.js"></script>
+<script src="s4.js"></script>
+<script src="s5.js"></script>
+<script src="s6.js"></script>
+<script src="s7.js"></script>
+<script>
+buildAll();
+const q=new URLSearchParams(location.search);
+window.renderFrame=T=>render(T);
+if(q.has('t'))render(parseFloat(q.get('t')));
+else{const t0=performance.now();(function loop(){render(((performance.now()-t0)/1000)%55);requestAnimationFrame(loop)})();}
+</script></body></html>
