@@ -1,0 +1,54 @@
+# Скачивает энциклопедию хадисов (HadeethEnc.com) в hadith/data для мини-приложения.
+# Запускается раз в неделю, при изменении скрипта и вручную (Actions → Run workflow).
+name: Данные энциклопедии хадисов
+
+on:
+  schedule:
+    - cron: "17 2 * * 1"
+  workflow_dispatch:
+  push:
+    paths:
+      - "hadith/tools/sync_data.py"
+      - ".github/workflows/hadith-data.yml"
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: hadith-data-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Скачать данные
+        run: python3 hadith/tools/sync_data.py --langs "ru" --out hadith/data
+
+      - name: Сохранить изменения
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hadith/data
+          if git diff --cached --quiet; then
+            echo "Изменений нет"
+            exit 0
+          fi
+          git commit -q -m "Обновление данных энциклопедии хадисов"
+          for i in 1 2 3; do
+            git pull -q --rebase origin "${GITHUB_REF_NAME}" && git push -q origin "HEAD:${GITHUB_REF_NAME}" && break
+            sleep 5
+          done
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Обновить сайт GitHub Pages
+        if: steps.commit.outputs.pushed == 'true' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" --silent

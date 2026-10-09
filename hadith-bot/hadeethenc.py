@@ -70,7 +70,8 @@ def _clean_hadeeth(raw: dict, lang: str) -> dict:
     hints = raw.get("hints") or []
     if isinstance(hints, str):
         hints = [hints]
-    words = raw.get("words_meaning") or []
+    # В API поле называется words_meanings (значения слов есть только в арабской версии)
+    words = raw.get("words_meanings") or raw.get("words_meaning") or []
     if not isinstance(words, list):
         words = []
     return {
@@ -315,13 +316,16 @@ class HadeethEncClient:
         async def crawl(category_id: str) -> None:
             page, last_page = 1, 1
             while page <= last_page:
-                result = await self.hadeeths_page(lang, category_id, page, 100, use_cache=False)
+                result = await self.hadeeths_page(lang, category_id, page, 1000, use_cache=False)
                 for item in result["items"]:
                     titles.setdefault(item["id"], item["title"])
                 last_page = result["last_page"]
                 page += 1
 
-        targets = [c["id"] for c in categories if c["count"] > 0] or [c["id"] for c in categories]
+        # Список корневого раздела содержит хадисы всех его подразделов,
+        # поэтому достаточно обойти корни (7 запросов вместо сотен).
+        roots = [c for c in categories if c["parent_id"] is None]
+        targets = [c["id"] for c in roots if c["count"] > 0] or [c["id"] for c in categories]
         results = await asyncio.gather(*(crawl(cid) for cid in targets), return_exceptions=True)
         errors = [r for r in results if isinstance(r, Exception)]
         if errors:

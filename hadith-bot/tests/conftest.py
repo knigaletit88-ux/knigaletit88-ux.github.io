@@ -43,7 +43,7 @@ def hadeeth_json(hid: str, lang: str) -> dict:
         return {
             "id": hid, "title": "إنما الأعمال بالنيات", "hadeeth": "إنما الأعمال بالنيات وإنما لكل امرئ ما نوى",
             "attribution": "متفق عليه", "grade": "صحيح", "explanation": "شرح", "hints": ["فائدة"],
-            "words_meaning": [{"word": "النيات", "meaning": "القصد"}], "reference": "صحيح البخاري",
+            "words_meanings": [{"word": "النيات", "meaning": "القصد"}], "reference": "صحيح البخاري",
         }
     return {
         "id": hid,
@@ -154,7 +154,7 @@ def config(tmp_path) -> Config:
         default_language="ru",
         data_dir=tmp_path,
         api_base=API,
-        hadith_url_template="https://hadeethenc.com/{lang}/browse/hadith/{id}",
+        hadith_url_template="https://sarhaan.com/hadeeth/{lang}/{id}/",
         site_url="https://sarhaan.com/hadeeth/ru/",
         daily_time=time(8, 0, tzinfo=ZoneInfo("Europe/Moscow")),
         channel_id="@hadith_channel",

@@ -66,7 +66,7 @@ class Config:
             data_dir=data_dir,
             api_base=os.environ.get("API_BASE", "https://hadeethenc.com/api/v1"),
             hadith_url_template=os.environ.get(
-                "HADITH_URL_TEMPLATE", "https://hadeethenc.com/{lang}/browse/hadith/{id}"
+                "HADITH_URL_TEMPLATE", "https://sarhaan.com/hadeeth/{lang}/{id}/"
             ),
             site_url=os.environ.get("SITE_URL", "https://sarhaan.com/hadeeth/ru/"),
             daily_time=daily_time,

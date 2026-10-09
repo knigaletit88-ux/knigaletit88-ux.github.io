@@ -94,7 +94,7 @@ docker run -d --name hadith-bot --restart unless-stopped \
 | `DAILY_TIME`, `TIMEZONE` | Время рассылки «Хадиса дня» и часовой пояс | `08:00`, `Europe/Moscow` |
 | `CHANNEL_ID` | Канал для ежедневной публикации (`@mychannel`), бот должен быть его администратором | пусто |
 | `SITE_URL` | Ссылка на сайт в разделе «О проекте» | `https://sarhaan.com/hadeeth/ru/` |
-| `HADITH_URL_TEMPLATE` | Ссылка «На сайте» под хадисом | `https://hadeethenc.com/{lang}/browse/hadith/{id}` |
+| `HADITH_URL_TEMPLATE` | Ссылка «На сайте» под хадисом | `https://sarhaan.com/hadeeth/{lang}/{id}/` |
 | `DATA_DIR` | Папка для базы пользователей и кеша | `./data` |
 
 ## Команды бота
