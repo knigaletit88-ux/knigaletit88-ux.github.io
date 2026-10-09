@@ -1,0 +1,30 @@
+name: hadith-api-probe
+on:
+  push:
+    branches: [ccr-0045da50-p0vuyb]
+    paths: ['.github/workflows/hadith-probe.yml']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe HadeethEnc API
+        run: |
+          B=https://hadeethenc.com/api/v1
+          O="Origin: https://knigaletit88-ux.github.io"
+          echo "=== languages headers"; curl -sS -D - -o /tmp/l.json -H "$O" "$B/languages" | head -25
+          echo "=== languages body"; head -c 400 /tmp/l.json; echo
+          python3 -c "import json;d=json.load(open('/tmp/l.json'));print(len(d), [x['code'] for x in d])"
+          echo "=== categories"; curl -sS -o /tmp/c.json "$B/categories/list/?language=ru"; head -c 700 /tmp/c.json; echo
+          python3 -c "import json;d=json.load(open('/tmp/c.json'));print('cats',len(d),'roots',[(x['id'],x['title'],x['hadeeths_count']) for x in d if not x['parent_id']])"
+          echo "=== roots"; curl -sS "$B/categories/roots/?language=ru" | head -c 400; echo
+          echo "=== list"; curl -sS "$B/hadeeths/list/?language=ru&category_id=1&page=1&per_page=100" -o /tmp/li.json; head -c 500 /tmp/li.json; echo
+          python3 -c "import json;d=json.load(open('/tmp/li.json'));print(len(d['data']), d['meta'])"
+          echo "=== one headers"; curl -sS -D - -o /tmp/h.json -H "$O" "$B/hadeeths/one/?language=ru&id=2962" | head -25
+          python3 -c "import json;d=json.load(open('/tmp/h.json'));print(json.dumps({k:(v if not isinstance(v,str) else v[:200]) for k,v in d.items()},ensure_ascii=False,indent=1)[:4000])"
+          echo "=== one ar"; curl -sS "$B/hadeeths/one/?language=ar&id=2962" | python3 -c "import json,sys;d=json.load(sys.stdin);print(json.dumps({k:(v if not isinstance(v,str) else v[:120]) for k,v in d.items()},ensure_ascii=False,indent=1)[:2500])"
+          echo "=== missing"; curl -sS -i "$B/hadeeths/one/?language=ru&id=99999999" | head -c 600; echo
+          echo "=== preflight"; curl -sS -i -X OPTIONS -H "$O" -H "Access-Control-Request-Method: GET" "$B/languages" | head -20
+          echo "=== sarhaan"; curl -sSL -D - -o /tmp/s.html -A "Mozilla/5.0" https://sarhaan.com/hadeeth/ru/ | head -20
+          grep -o '<title>[^<]*' /tmp/s.html | head -3
+          grep -oE '(href|src)="[^"]*"' /tmp/s.html | sort -u | head -60
+          grep -oE 'https?://[a-zA-Z0-9./_-]*api[a-zA-Z0-9./_?=&-]*' /tmp/s.html | sort -u | head -20
