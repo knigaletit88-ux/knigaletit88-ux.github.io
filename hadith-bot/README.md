@@ -52,38 +52,28 @@ python bot.py
 
 Нужен сервер, который всегда включён, например недорогой VPS с Ubuntu. Подойдёт и любой хостинг с поддержкой Docker.
 
-### Вариант А: VPS + systemd
+### Вариант А: VPS, установка одной командой (рекомендуется)
+
+1. Арендуйте VPS: **Ubuntu 22.04 или 24.04**, 1 ядро, 1 ГБ памяти. Этого достаточно.
+   Расположение лучше выбрать за пределами России (например, Нидерланды или Германия), чтобы не было сложностей с доступом к Telegram.
+2. Подключитесь к серверу: через веб-консоль в панели хостинга или по SSH (с телефона: приложения Termius или JuiceSSH).
+   Адрес сервера и пароль хостинг присылает после заказа.
+3. Выполните:
 
 ```bash
-sudo apt update && sudo apt install -y python3 python3-venv git libfribidi0
-git clone https://github.com/knigaletit88-ux/knigaletit88-ux.github.io.git
-cd knigaletit88-ux.github.io/hadith-bot
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env && nano .env      # вставить токен
+curl -fsSL https://raw.githubusercontent.com/knigaletit88-ux/knigaletit88-ux.github.io/ccr-0045da50-p0vuyb/hadith-bot/install.sh -o install.sh
+sudo bash install.sh
 ```
 
-Создайте службу `/etc/systemd/system/hadith-bot.service` (замените путь и пользователя на свои):
+Скрипт попросит вставить токен, установит всё нужное и запустит бота как службу. Бот сам перезапускается
+после сбоев и перезагрузки сервера. Повторный запуск `sudo bash install.sh` обновляет бота, токен сохраняется.
 
-```ini
-[Unit]
-Description=Hadith Telegram bot
-After=network-online.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/knigaletit88-ux.github.io/hadith-bot
-ExecStart=/home/ubuntu/knigaletit88-ux.github.io/hadith-bot/.venv/bin/python bot.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
+Управление:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now hadith-bot
-sudo journalctl -u hadith-bot -f       # логи
+sudo journalctl -u hadith-bot -f        # логи
+sudo systemctl restart hadith-bot       # перезапуск
+sudo nano /opt/hadith-bot/.env          # настройки и токен (после правки — перезапуск)
 ```
 
 ### Вариант Б: Docker
