@@ -149,6 +149,12 @@ def sync_language(lang: str, out: Path, workers: int) -> dict:
     if failed > max(10, len(todo) // 10):
         raise RuntimeError(f"[{lang}] слишком много ошибок загрузки: {failed}")
 
+    # Остальные файлы приводим к текущему набору полей без новых запросов к API
+    for hid in set(ids) - set(todo):
+        path = hdir / f"{hid}.json"
+        if path.exists():
+            changed += write_json(path, clean_hadeeth(json.loads(path.read_text(encoding="utf-8"))))
+
     # Принадлежность к разделам — из поля categories каждого хадиса, с подъёмом к родителям.
     parent = {c["id"]: c["parent"] for c in cats}
     members: dict[str, list[str]] = {c["id"]: [] for c in cats}
