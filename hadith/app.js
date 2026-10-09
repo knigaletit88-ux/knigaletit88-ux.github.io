@@ -1244,16 +1244,20 @@ function applyTheme() {
 }
 
 function startRoute() {
-  const param = IN_TG ? tg.initDataUnsafe?.start_param : new URLSearchParams(location.search).get("startapp");
-  const m = /^h(\d+)(?:_([a-z]{2,4}))?$/.exec(param || "");
-  if (m && !location.hash.startsWith("#/h/")) {
-    // Открыли по ссылке на хадис: под ним — главная, чтобы «Назад» вёл на неё
-    nav.stack = ["#/"];
-    nav.pushNext = true;
-    location.replace(`#/h/${m[1]}${m[2] ? "/" + m[2] : ""}`);
-    return true;
-  }
-  return false;
+  // Telegram передаёт служебные данные в адресе после «#» (#tgWebAppData=…).
+  // Скрипт telegram-web-app.js их уже прочитал, поэтому заменяем на маршрут главной.
+  if (!location.hash.startsWith("#/")) history.replaceState(null, "", location.pathname + location.search + "#/");
+
+  // h2962_ru — хадис, c2962_ru — карточка. Из ссылки t.me/…?startapp=… или из адреса ?startapp=…
+  const param = (IN_TG && tg.initDataUnsafe?.start_param) || new URLSearchParams(location.search).get("startapp");
+  const m = /^([hc])(\d+)(?:_([a-z]{2,4}))?$/.exec(param || "");
+  if (!m || currentRoute() !== "#/") return false;
+  const lang = m[3] || state.lang;
+  // Под открытым экраном — главная, чтобы «Назад» вёл на неё
+  nav.stack = ["#/"];
+  nav.pushNext = true;
+  location.replace(m[1] === "c" ? `#/card/${m[2]}/${lang}` : `#/h/${m[2]}/${lang}`);
+  return true;
 }
 
 function boot() {

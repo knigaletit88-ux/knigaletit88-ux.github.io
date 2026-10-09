@@ -1,0 +1,8 @@
+{
+  "name": "hadith-bot-vercel",
+  "private": true,
+  "type": "module",
+  "description": "Telegram-бот «Энциклопедия хадисов» для Vercel (вебхук, без зависимостей)",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" }
+}
