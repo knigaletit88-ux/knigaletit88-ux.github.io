@@ -7,24 +7,37 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe HadeethEnc API
+      - name: Probe HadeethEnc API (2)
+        shell: python
         run: |
-          B=https://hadeethenc.com/api/v1
-          O="Origin: https://knigaletit88-ux.github.io"
-          echo "=== languages headers"; curl -sS -D - -o /tmp/l.json -H "$O" "$B/languages" | head -25
-          echo "=== languages body"; head -c 400 /tmp/l.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/l.json'));print(len(d), [x['code'] for x in d])"
-          echo "=== categories"; curl -sS -o /tmp/c.json "$B/categories/list/?language=ru"; head -c 700 /tmp/c.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/c.json'));print('cats',len(d),'roots',[(x['id'],x['title'],x['hadeeths_count']) for x in d if not x['parent_id']])"
-          echo "=== roots"; curl -sS "$B/categories/roots/?language=ru" | head -c 400; echo
-          echo "=== list"; curl -sS "$B/hadeeths/list/?language=ru&category_id=1&page=1&per_page=100" -o /tmp/li.json; head -c 500 /tmp/li.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/li.json'));print(len(d['data']), d['meta'])"
-          echo "=== one headers"; curl -sS -D - -o /tmp/h.json -H "$O" "$B/hadeeths/one/?language=ru&id=2962" | head -25
-          python3 -c "import json;d=json.load(open('/tmp/h.json'));print(json.dumps({k:(v if not isinstance(v,str) else v[:200]) for k,v in d.items()},ensure_ascii=False,indent=1)[:4000])"
-          echo "=== one ar"; curl -sS "$B/hadeeths/one/?language=ar&id=2962" | python3 -c "import json,sys;d=json.load(sys.stdin);print(json.dumps({k:(v if not isinstance(v,str) else v[:120]) for k,v in d.items()},ensure_ascii=False,indent=1)[:2500])"
-          echo "=== missing"; curl -sS -i "$B/hadeeths/one/?language=ru&id=99999999" | head -c 600; echo
-          echo "=== preflight"; curl -sS -i -X OPTIONS -H "$O" -H "Access-Control-Request-Method: GET" "$B/languages" | head -20
-          echo "=== sarhaan"; curl -sSL -D - -o /tmp/s.html -A "Mozilla/5.0" https://sarhaan.com/hadeeth/ru/ | head -20
-          grep -o '<title>[^<]*' /tmp/s.html | head -3
-          grep -oE '(href|src)="[^"]*"' /tmp/s.html | sort -u | head -60
-          grep -oE 'https?://[a-zA-Z0-9./_-]*api[a-zA-Z0-9./_?=&-]*' /tmp/s.html | sort -u | head -20
+          import json, urllib.request
+          B = "https://hadeethenc.com/api/v1"
+          def get(p):
+              req = urllib.request.Request(B + p, headers={"User-Agent": "Mozilla/5.0"})
+              return json.load(urllib.request.urlopen(req, timeout=60))
+          d = get("/hadeeths/list/?language=ru&category_id=4&page=1&per_page=2000")
+          print("PP2000", len(d["data"]), d["meta"])
+          cats = get("/categories/list/?language=ru")
+          roots = [c for c in cats if not c["parent_id"]]
+          rootids = {}
+          for r in roots:
+              rootids[r["id"]] = {x["id"] for x in get(f"/hadeeths/list/?language=ru&category_id={r['id']}&page=1&per_page=2000")["data"]}
+          for k in [c for c in cats if c["parent_id"] == "3"][:6]:
+              ids = {x["id"] for x in get(f"/hadeeths/list/?language=ru&category_id={k['id']}&page=1&per_page=2000")["data"]}
+              print("CHILD", k["id"], k["hadeeths_count"], len(ids), "in root3:", len(ids & rootids["3"]))
+          allids = set().union(*rootids.values())
+          print("UNIQUE_RU_VIA_ROOTS", len(allids), {k: len(v) for k, v in rootids.items()})
+          en = set()
+          for r in roots:
+              en |= {x["id"] for x in get(f"/hadeeths/list/?language=en&category_id={r['id']}&page=1&per_page=2000")["data"]}
+          print("UNIQUE_EN_VIA_ROOTS", len(en))
+          for hid in sorted(allids, key=int)[:80]:
+              h = get(f"/hadeeths/one/?language=ar&id={hid}")
+              if h.get("words_meanings"):
+                  print("WM", hid, json.dumps(h["words_meanings"][:3], ensure_ascii=False))
+                  break
+          print("SAMPLE_LANGS", json.dumps(get("/languages"), ensure_ascii=False))
+          print("SAMPLE_CATS", json.dumps(cats, ensure_ascii=False))
+          print("SAMPLE_ONE_RU", json.dumps(get("/hadeeths/one/?language=ru&id=2962"), ensure_ascii=False))
+          print("SAMPLE_ONE_RU2", json.dumps(get("/hadeeths/one/?language=ru&id=5907"), ensure_ascii=False))
+          print("SAMPLE_LIST", json.dumps(get("/hadeeths/list/?language=ru&category_id=3&page=1&per_page=40"), ensure_ascii=False))
