@@ -75,7 +75,7 @@ def clean_hadeeth(raw: dict) -> dict:
     keep = (
         "id", "title", "hadeeth", "hadeeth_intro", "attribution", "grade", "explanation", "hints",
         "categories", "translations", "words_meanings", "reference",
-        "hadeeth_ar", "hadeeth_intro_ar", "explanation_ar", "hints_ar", "words_meanings_ar",
+        "hadeeth_ar", "words_meanings_ar",
         "attribution_ar", "grade_ar",
     )
     data = {k: raw[k] for k in keep if raw.get(k) not in (None, "", [])}
