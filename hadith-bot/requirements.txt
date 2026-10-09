@@ -1,0 +1,4 @@
+python-telegram-bot[job-queue]==22.8
+pillow>=11,<13
+fonttools>=4.50,<5
+tzdata>=2024.1
