@@ -4,7 +4,7 @@
 const CFG = {
   api: "https://hadeethenc.com/api/v1",
   mirror: "./data",
-  bot: "Hadis_1234bot", // запасное имя; настоящее приходит с botInfo
+  bot: "s_unnabot", // запасное имя; настоящее приходит с botInfo
   botInfo: "https://knigaletit88-uxgithubio-hadith-verc.vercel.app/api/info",
   appUrl: "https://knigaletit88-ux.github.io/hadith/",
   siteHome: "https://sarhaan.com/hadeeth/ru/",
@@ -115,7 +115,7 @@ const state = {
   favs: LS.get("favs", []), // [{id, lang, title}]
   query: "",
   langNames: LS.get("langNames", {}),
-  bot: LS.get("bot", CFG.bot),
+  bot: [null, "Hadis_1234bot"].includes(LS.get("bot", null)) ? CFG.bot : LS.get("bot"),
 };
 
 // Имя бота берём у сервера бота: после смены токена ссылки сами ведут на нового бота
