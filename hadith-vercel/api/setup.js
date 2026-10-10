@@ -16,7 +16,9 @@ export default async function handler(req, res) {
     res.statusCode = 500;
     return res.end(page("Нет токена", "<p>Добавьте переменную <code>BOT_TOKEN</code> в настройках проекта Vercel (Settings → Environment Variables) и сделайте Redeploy.</p>"));
   }
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  // Адреса отдельных сборок (…-abc123.vercel.app) закрыты защитой Vercel, и Telegram туда не попадёт,
+  // поэтому вебхук всегда ставим на основной адрес проекта.
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || req.headers["x-forwarded-host"] || req.headers.host;
   const url = `https://${host}/api/webhook`;
   const tg = telegram(token);
   const me = await tg("getMe");
@@ -33,6 +35,6 @@ export default async function handler(req, res) {
   await tg("setMyCommands", { commands: COMMANDS });
   res.statusCode = ok ? 200 : 500;
   res.end(ok
-    ? page("✅ Бот подключён", `<p>Бот <b>@${me.username}</b> теперь отвечает через Vercel.</p><p>Откройте Telegram и отправьте боту <code>/start</code>.</p>`)
+    ? page("✅ Бот подключён", `<p>Бот <b>@${me.username}</b> теперь отвечает через Vercel.</p><p>Откройте Telegram и отправьте боту <code>/start</code>.</p><p style="font-size:13px;opacity:.6">Адрес вебхука: ${url}</p>`)
     : page("Не получилось", "<p>Telegram не принял адрес вебхука. Откройте эту страницу ещё раз через минуту.</p>"));
 }
