@@ -4,7 +4,8 @@
 const CFG = {
   api: "https://hadeethenc.com/api/v1",
   mirror: "./data",
-  bot: "Hadis_1234bot",
+  bot: "Hadis_1234bot", // запасное имя; настоящее приходит с botInfo
+  botInfo: "https://knigaletit88-uxgithubio-hadith-verc.vercel.app/api/info",
   appUrl: "https://knigaletit88-ux.github.io/hadith/",
   siteHome: "https://sarhaan.com/hadeeth/ru/",
   siteHadith: (lang, id) => `https://sarhaan.com/hadeeth/${lang}/${id}/`,
@@ -114,7 +115,20 @@ const state = {
   favs: LS.get("favs", []), // [{id, lang, title}]
   query: "",
   langNames: LS.get("langNames", {}),
+  bot: LS.get("bot", CFG.bot),
 };
+
+// Имя бота берём у сервера бота: после смены токена ссылки сами ведут на нового бота
+async function refreshBotName() {
+  try {
+    const res = await fetch(CFG.botInfo);
+    const info = await res.json();
+    if (info?.username && info.username !== state.bot) {
+      state.bot = info.username;
+      LS.set("bot", info.username);
+    }
+  } catch { /* сервер недоступен — остаётся сохранённое имя */ }
+}
 
 function saveFavs() {
   LS.set("favs", state.favs);
@@ -705,7 +719,7 @@ function splitIntro(h) {
   return ["", text];
 }
 
-const hadithLink = (h) => `https://t.me/${CFG.bot}?startapp=h${h.id}_${h.lang}`;
+const hadithLink = (h) => `https://t.me/${state.bot}?startapp=h${h.id}_${h.lang}`;
 
 async function viewHadith(id, langParam) {
   const seq = renderSeq;
@@ -896,7 +910,7 @@ async function viewLangs() {
 // --------------------------------------------------------------- о проекте
 
 function shareApp() {
-  const link = `https://t.me/${CFG.bot}?startapp`;
+  const link = `https://t.me/${state.bot}?startapp`;
   const text = "🌿 Энциклопедия хадисов Пророка ﷺ: хадисы с разъяснениями и полезными выводами на 72 языках, поиск и карточки для публикации.";
   if (IN_TG) openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
   else if (navigator.share) navigator.share({ text, url: link }).catch(() => {});
@@ -1128,7 +1142,7 @@ async function drawCard(canvas, h, opts) {
   ctx.fillText("Энциклопедия хадисов Пророка ﷺ", W / 2, panelBottom + 62);
   ctx.fillStyle = T.foot2;
   ctx.font = "600 27px Manrope, sans-serif";
-  ctx.fillText(`@${CFG.bot} · хадис №${h.id}`, W / 2, panelBottom + 112);
+  ctx.fillText(`@${state.bot} · хадис №${h.id}`, W / 2, panelBottom + 112);
   return { grown };
 }
 
@@ -1274,6 +1288,7 @@ function boot() {
   applyTheme();
   window.addEventListener("hashchange", onRoute);
   DB.languages().catch(() => {});
+  refreshBotName();
   syncFromCloud().then((changed) => { if (changed && currentRoute() === "#/") onRoute(); });
   if (!startRoute()) onRoute();
 }

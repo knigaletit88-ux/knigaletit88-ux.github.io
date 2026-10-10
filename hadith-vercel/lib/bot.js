@@ -236,7 +236,7 @@ async function onInline(tg, iq, ctx) {
 let botUsername = process.env.BOT_USERNAME || "";
 
 export async function handleUpdate(update, tg) {
-  if (!botUsername) botUsername = (await tg("getMe"))?.username || "Hadis_1234bot";
+  if (!botUsername) botUsername = (await tg("getMe"))?.username || "";
   const chat = update.message?.chat || update.callback_query?.message?.chat;
   const ctx = { username: botUsername, private: !chat || chat.type === "private" };
   try {
