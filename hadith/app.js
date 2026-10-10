@@ -4,8 +4,8 @@
 const CFG = {
   api: "https://hadeethenc.com/api/v1",
   mirror: "./data",
-  bot: "s_unnabot", // запасное имя; настоящее приходит с botInfo
-  botInfo: "https://knigaletit88-uxgithubio-hadith-verc.vercel.app/api/info",
+  bot: "s_unnabot", // запасное имя; настоящее приходит с сервера бота (/api/info)
+  server: "https://knigaletit88-uxgithubio-hadith-verc.vercel.app", // бот на Vercel: имя бота и полезные каналы
   appUrl: "https://knigaletit88-ux.github.io/hadith/",
   siteHome: "https://sarhaan.com/hadeeth/ru/",
   siteHadith: (lang, id) => `https://sarhaan.com/hadeeth/${lang}/${id}/`,
@@ -116,18 +116,35 @@ const state = {
   query: "",
   langNames: LS.get("langNames", {}),
   bot: [null, "Hadis_1234bot"].includes(LS.get("bot", null)) ? CFG.bot : LS.get("bot"),
+  channels: LS.get("channels", []),
 };
 
 // Имя бота берём у сервера бота: после смены токена ссылки сами ведут на нового бота
 async function refreshBotName() {
   try {
-    const res = await fetch(CFG.botInfo);
+    const res = await fetch(`${CFG.server}/api/info`);
     const info = await res.json();
     if (info?.username && info.username !== state.bot) {
       state.bot = info.username;
       LS.set("bot", info.username);
     }
   } catch { /* сервер недоступен — остаётся сохранённое имя */ }
+}
+
+// Полезные каналы ведёт админ в чате с ботом (/admin); список берём у сервера бота раз за запуск
+let channelsReq = null;
+function loadChannels() {
+  if (!channelsReq) {
+    channelsReq = fetch(`${CFG.server}/api/channels`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data) => {
+        state.channels = Array.isArray(data.channels) ? data.channels : [];
+        LS.set("channels", state.channels);
+        return state.channels;
+      });
+    channelsReq.catch(() => { channelsReq = null; });
+  }
+  return channelsReq;
 }
 
 function saveFavs() {
@@ -335,6 +352,8 @@ const I = {
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
   download: svg('<path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 19h14"/>'),
   close: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
+  megaphone: svg('<path d="M3 10v4a1 1 0 0 0 1 1h3l6 4V5L7 9H4a1 1 0 0 0-1 1z"/><path d="M17 8.5a5 5 0 0 1 0 7M8 15l1 5h3"/>'),
+  chevron: svg('<path d="m9 6 6 6-6 6"/>'),
 };
 const CAT_ICONS = {
   1: I.book,
@@ -342,7 +361,7 @@ const CAT_ICONS = {
   3: svg('<path d="M20 14.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 10.5z"/>'),
   4: svg('<path d="M12 4v16M8 20h8M5 7h14"/><path d="m5 7-3 6a3 3 0 0 0 6 0zM19 7l-3 6a3 3 0 0 0 6 0z"/>'),
   5: svg('<path d="M12 2.5l2.1 4.6 4.6-1.9-1.9 4.6 4.6 2.1-4.6 2.1 1.9 4.6-4.6-1.9-2.1 4.6-2.1-4.6-4.6 1.9 1.9-4.6-4.6-2.1 4.6-2.1-1.9-4.6 4.6 1.9z"/>'),
-  6: svg('<path d="M3 10v4a1 1 0 0 0 1 1h3l6 4V5L7 9H4a1 1 0 0 0-1 1z"/><path d="M17 8.5a5 5 0 0 1 0 7M8 15l1 5h3"/>'),
+  6: I.megaphone,
   7: svg('<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/>'),
 };
 
@@ -385,6 +404,7 @@ const ROUTES = [
   [/^#\/fav$/, () => viewFavs()],
   [/^#\/lang$/, () => viewLangs()],
   [/^#\/about$/, () => viewAbout()],
+  [/^#\/channels$/, () => viewChannels()],
 ];
 
 async function onRoute() {
@@ -543,6 +563,7 @@ async function viewHome() {
         <div class="section-head"><h2 class="section-title">Разделы</h2><a class="section-link" data-go="#/about">О проекте</a></div>
         <div class="cats" id="cats">${Array.from({ length: 6 }, () => `<div class="skeleton" style="height:128px"></div>`).join("")}</div>
       </section>
+      <section class="section" id="channels" hidden></section>
       <div class="share-banner">
         <p>«Указавший на благое получает такую же награду, как и совершивший его»</p>
         <button class="btn" data-act="shareApp">${I.send} Отправить друзьям</button>
@@ -563,6 +584,18 @@ async function viewHome() {
   actions.shareApp = shareApp;
 
   if (state.query) runSearch(state.query);
+
+  const channelsBox = root.querySelector("#channels");
+  const showChannels = (list) => {
+    channelsBox.hidden = !list.length;
+    channelsBox.innerHTML = list.length ? `
+      <div class="section-head"><h2 class="section-title">Полезные каналы</h2><a class="section-link" data-go="#/channels">Все</a></div>
+      ${list.length > 2
+        ? `<div class="ch-scroll">${list.map((c) => `<a class="ch-card" data-ext="${esc(c.url)}">${channelAvatar(c)}<span class="ch-name">${esc(c.title)}</span><span class="ch-user">${c.username ? "@" + esc(c.username) : "канал"}</span></a>`).join("")}</div>`
+        : channelRows(list)}` : "";
+  };
+  showChannels(state.channels);
+  loadChannels().then((list) => isCurrent(seq) && showChannels(list)).catch(() => {});
 
   const lang = state.lang;
   DB.languages().then(() => {
@@ -905,6 +938,45 @@ async function viewLangs() {
     else go("#/", { replace: true });
   };
   render();
+}
+
+// --------------------------------------------------------- полезные каналы
+
+const AVATAR_TONES = 4;
+function channelAvatar(c) {
+  const letter = (String(c.title).match(/[\p{L}\p{N}]/u) || ["•"])[0].toUpperCase();
+  return `<span class="ch-ava tone${hashStr(c.key || c.title) % AVATAR_TONES}">${esc(letter)}${c.photo ? `<img src="${esc(c.photo)}" alt="" loading="lazy">` : ""}</span>`;
+}
+
+const channelRows = (list) => `<div class="ch-list">${list.map((c) => `
+  <a class="ch-row" data-ext="${esc(c.url)}">
+    ${channelAvatar(c)}
+    <span class="ch-body">
+      <span class="ch-name">${esc(c.title)}</span>
+      ${c.username ? `<span class="ch-user">@${esc(c.username)}</span>` : ""}
+      ${c.description ? `<span class="ch-desc">${esc(c.description)}</span>` : ""}
+    </span>
+    <span class="ch-go">${I.chevron}</span>
+  </a>`).join("")}</div>`;
+
+// Если аватарка не загрузилась — остаётся буква
+document.addEventListener("error", (e) => { if (e.target.matches?.(".ch-ava img")) e.target.remove(); }, true);
+
+async function viewChannels() {
+  const seq = renderSeq;
+  const root = mount(`${topbar("Полезные каналы")}
+    <div class="page-head"><h2>Полезные каналы</h2><p>Каналы, которые мы рекомендуем. Нажмите, чтобы открыть.</p></div>
+    <div data-slot="main">${state.channels.length ? channelRows(state.channels) : `<div class="list">${skeletonList(3)}</div>`}</div>`);
+  const slot = root.querySelector("[data-slot=main]");
+  try {
+    const list = await loadChannels();
+    if (!isCurrent(seq)) return;
+    slot.innerHTML = list.length
+      ? channelRows(list)
+      : `<div class="empty">${I.megaphone}<h3>Скоро здесь появятся каналы</h3><p>Мы готовим подборку полезных каналов — загляните чуть позже.</p><button class="btn" data-go="#/">На главную</button></div>`;
+  } catch (err) {
+    if (isCurrent(seq) && !state.channels.length) slot.innerHTML = errorInline(err);
+  }
 }
 
 // --------------------------------------------------------------- о проекте

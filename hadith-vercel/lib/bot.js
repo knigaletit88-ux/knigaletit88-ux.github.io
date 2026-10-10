@@ -1,6 +1,8 @@
 // Логика бота: отвечает на сообщения, кнопки и inline-запросы.
 import { createHash } from "node:crypto";
+import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels } from "./channels.js";
 import { dailyId, getHadith, randomId, search, splitIntro } from "./hadith.js";
+import { getChannels } from "./store.js";
 
 export const APP_URL = process.env.APP_URL || "https://knigaletit88-ux.github.io/hadith/";
 const SITE = (id) => `https://sarhaan.com/hadeeth/ru/${id}/`;
@@ -74,6 +76,7 @@ const HELP = `<b>Как пользоваться</b>
 🔢 Напишите номер, например <code>2962</code>, — пришлю хадис
 🌅 /today — хадис дня
 🎲 /random — случайный хадис
+📢 /channels — полезные каналы
 📤 В любом чате напишите <code>@{bot} слово</code>, чтобы отправить хадис другу`;
 
 function hadithMessage(h, title) {
@@ -118,6 +121,7 @@ async function sendHadith(tg, chatId, id, ctx, title) {
 }
 
 async function sendGreeting(tg, msg, ctx) {
+  const channels = await getChannels().catch(() => []);
   const share = shareUrl(`https://t.me/${ctx.username}`, "🌿 Энциклопедия хадисов Пророка ﷺ: хадисы с разъяснениями и полезными выводами на 72 языках.");
   await tg("sendMessage", {
     chat_id: msg.chat.id,
@@ -127,6 +131,7 @@ async function sendGreeting(tg, msg, ctx) {
       inline_keyboard: [
         [appButton("📖 Открыть энциклопедию", "", ctx)],
         [{ text: "🌅 Хадис дня", callback_data: "day" }, { text: "🎲 Случайный", callback_data: "rnd" }],
+        ...(channels.length ? [[{ text: "📢 Полезные каналы", callback_data: "channels" }]] : []),
         [{ text: "💚 Поделиться ботом", url: share }],
       ],
     },
@@ -157,6 +162,11 @@ async function sendSearch(tg, chatId, query, ctx) {
 }
 
 async function onMessage(tg, msg, ctx) {
+  // Админ пересылает пост из канала или присылает ссылку — предложить добавить в «Полезные каналы»
+  if (ctx.private && isAdmin(msg.from?.id) && !(msg.text || "").startsWith("/")) {
+    const ref = channelRef(msg);
+    if (ref) return adminMessage(tg, msg, ref);
+  }
   const text = (msg.text || "").trim();
   if (!text) return;
   const [command, ...rest] = text.split(/\s+/);
@@ -175,6 +185,9 @@ async function onMessage(tg, msg, ctx) {
     return tg("sendMessage", { chat_id: chatId, text: "📖 Энциклопедия хадисов:", reply_markup: { inline_keyboard: [[appButton("Открыть энциклопедию", "", ctx)]] } });
   }
   if (cmd === "search") return rest.length ? sendSearch(tg, chatId, rest.join(" "), ctx) : undefined;
+  if (cmd === "channels") return sendChannels(tg, chatId);
+  if (cmd === "id") return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `Ваш Telegram ID: <code>${esc(msg.from?.id)}</code>` });
+  if (cmd === "admin") return ctx.private ? adminCommand(tg, msg) : undefined;
   if (cmd || !ctx.private) return; // в группах отвечаем только на команды
 
   const number = text.replace(/^[№#\s]+/, "");
@@ -188,12 +201,14 @@ async function onMessage(tg, msg, ctx) {
 
 async function onCallback(tg, cq, ctx) {
   const chatId = cq.message?.chat?.id;
+  const data = cq.data || "";
+  if (data.startsWith("ch:")) return adminCallback(tg, cq);
   await tg("answerCallbackQuery", { callback_query_id: cq.id });
   if (!chatId) return;
-  const data = cq.data || "";
   if (data === "rnd") return sendHadith(tg, chatId, await randomId(), ctx);
   if (data === "day") return sendHadith(tg, chatId, await dailyId(), ctx, "🌅 <b>Хадис дня</b>");
   if (data.startsWith("h:")) return sendHadith(tg, chatId, data.slice(2), ctx);
+  if (data === "channels") return sendChannels(tg, chatId);
 }
 
 async function onInline(tg, iq, ctx) {
@@ -254,5 +269,6 @@ export const COMMANDS = [
   { command: "today", description: "Хадис дня" },
   { command: "random", description: "Случайный хадис" },
   { command: "app", description: "Открыть энциклопедию" },
+  { command: "channels", description: "Полезные каналы" },
   { command: "help", description: "Как пользоваться" },
 ];
