@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     return res.end(JSON.stringify({ ok: false }));
   }
   try {
-    await handleUpdate(await readBody(req), telegram(token));
+    await handleUpdate(await readBody(req), telegram(token), token);
   } catch (err) {
     console.error(err);
   }

@@ -32,6 +32,14 @@ async function redis(...command) {
 
 const parse = (raw, fallback) => { try { return JSON.parse(raw) ?? fallback; } catch { return fallback; } };
 
+// Раздел «Время намаза» (lib/namaz.js) хранит свои данные в этой же базе под ключами namaz:…
+// Отсюда они только читаются: ждёт ли бот от человека название города и настроен ли у него намаз.
+export async function namazContext(chatId, userId) {
+  if (!hasStore()) return { waitingCity: false, known: false };
+  const [state, user] = (await redis("MGET", `namaz:fsm:s:${chatId}:${userId}`, `namaz:user:${userId}`)) || [];
+  return { waitingCity: state === "Place:waiting", known: Boolean(user) };
+}
+
 // [{key, title, description, url, username?, chatId?, photo, added}]
 export async function getChannels() {
   if (!hasStore()) return [];
