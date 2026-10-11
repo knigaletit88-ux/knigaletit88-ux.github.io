@@ -1,10 +1,10 @@
 // Логика бота: отвечает на сообщения, кнопки и inline-запросы.
 import { createHash } from "node:crypto";
-import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels } from "./channels.js";
+import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels, usersCommand } from "./channels.js";
 import { dailyId, getArabic, getHadith, neighbors, randomId, search, splitIntro } from "./hadith.js";
 import { HADITH_BUTTON, NAMAZ_BUTTON, NAMAZ_DOWN, forwardToNamaz, isNamaz, namazEnabled } from "./namaz.js";
 import { parts, snippet } from "./search.js";
-import { getChannels } from "./store.js";
+import { getChannels, trackUser } from "./store.js";
 
 export const APP_URL = process.env.APP_URL || "https://knigaletit88-ux.github.io/hadith/";
 const SITE = (id) => `https://sarhaan.com/hadeeth/ru/${id}/`;
@@ -243,6 +243,7 @@ async function onMessage(tg, msg, ctx) {
   if (cmd === "channels") return sendChannels(tg, chatId);
   if (cmd === "id") return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `Ваш Telegram ID: <code>${esc(msg.from?.id)}</code>` });
   if (cmd === "admin") return ctx.private ? adminCommand(tg, msg) : undefined;
+  if (cmd === "users" || cmd === "stats") return ctx.private ? usersCommand(tg, msg) : undefined;
   if (cmd || !ctx.private) return; // в группах отвечаем только на команды
   if (text === HADITH_BUTTON) return sendGreeting(tg, msg, ctx); // кнопка возврата из меню намаза
 
@@ -316,6 +317,19 @@ async function namazUpdate(update) {
 }
 
 export async function handleUpdate(update, tg, token = process.env.BOT_TOKEN) {
+  // Учёт для админки: кто писал боту или нажимал кнопки в личном чате (включая раздел намаза).
+  // Идёт одновременно с ответом и не задерживает его.
+  const chat = update.message?.chat || update.callback_query?.message?.chat;
+  const from = update.message?.from || update.callback_query?.from;
+  const counted = chat?.type === "private" && from?.id && !from.is_bot ? trackUser(from.id) : null;
+  try {
+    return await dispatch(update, tg, token);
+  } finally {
+    await counted;
+  }
+}
+
+async function dispatch(update, tg, token) {
   if (!botUsername) botUsername = (await tg("getMe"))?.username || "";
   const chat = update.message?.chat || update.callback_query?.message?.chat;
   const ctx = { username: botUsername, private: !chat || chat.type === "private" };
