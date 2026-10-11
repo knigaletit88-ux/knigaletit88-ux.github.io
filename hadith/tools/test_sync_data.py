@@ -44,6 +44,8 @@ def test_sync(tmp_path, monkeypatch):
 
     index = json.loads((tmp_path / "ru/index.json").read_text())
     assert index == [["10", "Хадис 10"], ["11", "Хадис 11"], ["12", "Хадис 12"]]  # 13 не переведён
+    search = json.loads((tmp_path / "ru/search.json").read_text())
+    assert search == [["10", "Текст"], ["11", "Текст"], ["12", "Текст"]]
     cats = {c["id"]: c["ids"] for c in json.loads((tmp_path / "ru/categories.json").read_text())}
     assert cats == {"1": ["10", "11", "12"], "2": ["10", "11"], "3": ["12"]}
 

@@ -1,7 +1,8 @@
 // Логика бота: отвечает на сообщения, кнопки и inline-запросы.
 import { createHash } from "node:crypto";
 import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels } from "./channels.js";
-import { dailyId, getHadith, randomId, search, splitIntro } from "./hadith.js";
+import { dailyId, getArabic, getHadith, neighbors, randomId, search, splitIntro } from "./hadith.js";
+import { parts, snippet } from "./search.js";
 import { getChannels } from "./store.js";
 
 export const APP_URL = process.env.APP_URL || "https://knigaletit88-ux.github.io/hadith/";
@@ -72,8 +73,9 @@ const GREETING = (name) => `<b>السلام عليكم ورحمة الله وب�
 const HELP = `<b>Как пользоваться</b>
 
 📖 Кнопка «Открыть» внизу — вся энциклопедия: разделы, поиск, разъяснения, карточки, 72 языка
-🔍 Напишите слово или фразу — я найду хадисы
+🔍 Напишите слово или фразу — я найду хадисы (слово ищется с любыми окончаниями: <i>мать</i> — <i>матери</i>, <i>матерью</i>)
 🔢 Напишите номер, например <code>2962</code>, — пришлю хадис
+⬅️ ➡️ Под хадисом — листать хадисы по порядку, 🕌 «Оригинал» — текст на арабском
 🌅 /today — хадис дня
 🎲 /random — случайный хадис
 📢 /channels — полезные каналы
@@ -90,14 +92,24 @@ function hadithMessage(h, title) {
   return parts.join("\n\n");
 }
 
-function hadithKeyboard(h, ctx) {
+function hadithKeyboard(h, ctx, near) {
+  const share = { text: "📤 Поделиться", switch_inline_query: String(h.id) };
   return {
     inline_keyboard: [
       [appButton("📖 Разъяснение и польза", `h${h.id}_ru`, ctx)],
-      [appButton("🎨 Карточка", `c${h.id}_ru`, ctx), { text: "📤 Поделиться", switch_inline_query: String(h.id) }],
-      [{ text: "🎲 Ещё хадис", callback_data: "rnd" }, { text: "🌐 На сайте", url: SITE(h.id) }],
+      [{ text: "🕌 Оригинал", callback_data: `ar:${h.id}` }, appButton("🎨 Карточка", `c${h.id}_ru`, ctx)],
+      near
+        ? [{ text: "⬅️ Пред.", callback_data: `go:${near.prev}` }, share, { text: "След. ➡️", callback_data: `go:${near.next}` }]
+        : [share],
+      [{ text: "🎲 Случайный", callback_data: "rnd" }, { text: "🌐 На сайте", url: SITE(h.id) }],
     ],
   };
+}
+
+// Запрос для мини-приложения: ?startapp=q<base64url> (Telegram пропускает до 64 знаков)
+function searchParam(query) {
+  const encoded = Buffer.from(query.trim(), "utf8").toString("base64url");
+  return encoded.length <= 63 ? `q${encoded}` : "";
 }
 
 // ---------------------------------------------------------------- действия
@@ -109,14 +121,49 @@ async function sendHadith(tg, chatId, id, ctx, title) {
     return;
   }
   const chunks = splitText(hadithMessage(h, title));
+  const keyboard = hadithKeyboard(h, ctx, await neighbors(h.id).catch(() => null));
   for (const [i, chunk] of chunks.entries()) {
     await tg("sendMessage", {
       chat_id: chatId,
       text: chunk,
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
-      ...(i === chunks.length - 1 ? { reply_markup: hadithKeyboard(h, ctx) } : {}),
+      ...(i === chunks.length - 1 ? { reply_markup: keyboard } : {}),
     });
+  }
+}
+
+// «Пред.» / «След.»: если хадис помещается в одно сообщение — меняем текущее, иначе присылаем новое
+async function showNeighbor(tg, cq, id, ctx) {
+  const msg = cq.message;
+  const h = await getHadith(id);
+  const text = h && hadithMessage(h);
+  if (text && text.length <= LIMIT && /^(📜 Хадис №|🌅 Хадис дня)/.test(msg.text || "")) {
+    const done = await tg("editMessageText", {
+      chat_id: msg.chat.id,
+      message_id: msg.message_id,
+      text,
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+      reply_markup: hadithKeyboard(h, ctx, await neighbors(h.id).catch(() => null)),
+    });
+    if (done) return;
+  }
+  return sendHadith(tg, msg.chat.id, id, ctx);
+}
+
+// «Оригинал»: арабский текст хадиса ответом на сообщение с переводом
+async function sendArabic(tg, chatId, id, replyTo) {
+  const ar = await getArabic(id);
+  const reply = replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {};
+  if (!ar?.text) return tg("sendMessage", { chat_id: chatId, text: `😔 Оригинальный текст хадиса №${id} не найден.`, ...reply });
+  const meta = [ar.attribution && `📚 ${esc(ar.attribution)}`, ar.grade && `✅ ${esc(ar.grade)}`].filter(Boolean).join("\n");
+  const chunks = splitText(`🕌 <b>Хадис №${esc(id)} — оригинал</b>\n\n${esc(ar.text)}${meta ? `\n\n${meta}` : ""}`);
+  const source = ar.reference ? `<blockquote expandable>📕 ${esc(ar.reference)}</blockquote>` : "";
+  if (source && chunks.at(-1).length + source.length + 2 <= LIMIT) chunks[chunks.length - 1] += `\n\n${source}`;
+  else if (source) chunks.push(source);
+  for (const [i, chunk] of chunks.entries()) {
+    await tg("sendMessage", { chat_id: chatId, text: chunk, parse_mode: "HTML", ...(i ? {} : reply) });
   }
 }
 
@@ -139,20 +186,25 @@ async function sendGreeting(tg, msg, ctx) {
 }
 
 async function sendSearch(tg, chatId, query, ctx) {
-  const { total, items } = await search(query, 10);
+  const { total, items, query: q } = await search(query, 10);
   if (!total) {
     await tg("sendMessage", {
       chat_id: chatId,
       parse_mode: "HTML",
-      text: `😔 По запросу «${esc(shorten(query, 60))}» ничего не нашлось.\n\nПопробуйте другое слово или его часть — например, <i>молитв</i> вместо <i>молитвами</i>.`,
+      text: `😔 По запросу «${esc(shorten(query, 60))}» ничего не нашлось.\n\nПроверьте написание или попробуйте другое слово — например, <i>молитва</i>, <i>родители</i>, <i>терпение</i>.`,
     });
     return;
   }
-  const lines = items.map(([id, title], i) => `<b>${i + 1}.</b> ${esc(shorten(title, 160))} <i>(№${id})</i>`);
-  const buttons = items.map(([id], i) => ({ text: String(i + 1), callback_data: `h:${id}` }));
+  // Показываем то место, где нашлось слово, и выделяем его
+  const lines = items.map((r, i) => {
+    const place = r.inTitle ? r.title : r.inText ? r.text : `${r.intro} ${r.text}`;
+    const text = parts(snippet(place, q, 170), q).map(([part, hit]) => (hit ? `<b>${esc(part)}</b>` : esc(part))).join("");
+    return `<b>${i + 1}.</b> ${text} <i>(№${r.id})</i>`;
+  });
+  const buttons = items.map((r, i) => ({ text: String(i + 1), callback_data: `h:${r.id}` }));
   const keyboard = [];
   for (let i = 0; i < buttons.length; i += 5) keyboard.push(buttons.slice(i, i + 5));
-  if (total > items.length) keyboard.push([appButton(`🔍 Все ${total} — в энциклопедии`, "", ctx)]);
+  if (total > items.length) keyboard.push([appButton(`🔍 Все ${total} — в энциклопедии`, searchParam(query), ctx)]);
   await tg("sendMessage", {
     chat_id: chatId,
     parse_mode: "HTML",
@@ -208,6 +260,8 @@ async function onCallback(tg, cq, ctx) {
   if (data === "rnd") return sendHadith(tg, chatId, await randomId(), ctx);
   if (data === "day") return sendHadith(tg, chatId, await dailyId(), ctx, "🌅 <b>Хадис дня</b>");
   if (data.startsWith("h:")) return sendHadith(tg, chatId, data.slice(2), ctx);
+  if (data.startsWith("go:")) return showNeighbor(tg, cq, data.slice(3), ctx);
+  if (data.startsWith("ar:")) return sendArabic(tg, chatId, data.slice(3), cq.message.message_id);
   if (data === "channels") return sendChannels(tg, chatId);
 }
 
@@ -217,7 +271,7 @@ async function onInline(tg, iq, ctx) {
   let ids;
   if (/^\d{1,9}$/.test(number)) ids = [number];
   else if (!q) ids = [await dailyId(), await randomId(), await randomId()];
-  else ids = (await search(q, 10)).items.map(([id]) => id);
+  else ids = (await search(q, 10)).items.map((r) => r.id);
 
   const found = await Promise.all([...new Set(ids)].map((id) => getHadith(id).catch(() => null)));
   const results = found.filter(Boolean).map((h) => {

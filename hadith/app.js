@@ -1,6 +1,8 @@
 // Энциклопедия хадисов — мини-приложение Telegram.
 // Данные: HadeethEnc.com (русская версия — копия в ./data, остальные языки — напрямую из API).
 
+import { compile, find, parts, snippet } from "./search.js";
+
 const CFG = {
   api: "https://hadeethenc.com/api/v1",
   mirror: "./data",
@@ -267,6 +269,17 @@ const DB = {
       for (const list of lists) for (const it of list.data || []) if (!seen.has(String(it.id))) seen.set(String(it.id), it.title);
       return [...seen].map(([id, title]) => [id, title]);
     });
+  },
+
+  // Для поиска: [[id, заголовок, текст, вступление], …]. Полные тексты есть в копии (русский),
+  // для остальных языков ищем по заголовкам.
+  async searchItems(lang) {
+    const idx = await DB.index(lang);
+    if (!(await hasMirror(lang))) return idx;
+    const rows = await fetchJson(`${CFG.mirror}/${lang}/search.json`).catch(() => null);
+    if (!rows) return idx;
+    const byId = new Map(rows.map(([id, ...rest]) => [String(id), rest]));
+    return idx.map(([id, title]) => [id, title, ...(byId.get(String(id)) || [])]);
   },
 
   // Хадисы раздела: {items: [{id, title}], total, pages}
@@ -652,14 +665,7 @@ function clearSearch() {
   setQuery("");
 }
 
-function highlight(title, words) {
-  if (!words.length) return esc(title);
-  const pattern = words
-    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/[её]/g, "[её]"))
-    .sort((a, b) => b.length - a.length).join("|");
-  const re = new RegExp(`(${pattern})`, "giu");
-  return title.split(re).map((part, i) => (i % 2 ? `<mark>${esc(part)}</mark>` : esc(part))).join("");
-}
+const marked = (text, q) => parts(text, q).map(([part, hit]) => (hit ? `<mark>${esc(part)}</mark>` : esc(part))).join("");
 
 let searchSeq = 0;
 async function runSearch(q) {
@@ -671,39 +677,36 @@ async function runSearch(q) {
     return;
   }
   const lang = state.lang;
-  const fast = indexMaps.has(lang);
-  if (!fast) box.innerHTML = `<div class="spinner"></div><p class="hint">Загружаю хадисы для поиска…</p>`;
-  let idx;
+  if (!searchCache.has(lang)) {
+    box.innerHTML = `<div class="spinner"></div><p class="hint">Загружаю хадисы для поиска…</p>`;
+    searchCache.set(lang, DB.searchItems(lang));
+    searchCache.get(lang).catch(() => searchCache.delete(lang));
+  }
+  let items;
   try {
-    idx = await DB.index(lang);
+    items = await searchCache.get(lang);
   } catch (err) {
     if (seq === searchSeq) box.innerHTML = errorInline(err);
     return;
   }
   if (seq !== searchSeq) return;
-  indexMap(lang, idx);
-  const phrase = normalize(q);
-  const words = phrase.split(" ").filter(Boolean);
-  if (!words.length) { box.innerHTML = ""; return; }
-  const exact = [], partial = [];
-  for (const [id, title] of idx) {
-    const t = normalize(title);
-    if (t.includes(phrase)) exact.push([id, title]);
-    else if (words.every((w) => t.includes(w))) partial.push([id, title]);
-  }
-  const results = exact.concat(partial);
-  const rawWords = q.trim().split(/\s+/).filter((w) => w.length > 1);
+  const query = compile(q);
+  if (!query.terms.length) { box.innerHTML = ""; return; }
+  const results = find(items, query);
+  // В списке — то место, где нашлось слово: заголовок или отрывок из текста хадиса
+  const shown = (r) => marked(r.inTitle ? r.title : snippet(r.inText ? r.text : `${r.intro} ${r.text}`, query, 190), query);
   const renderPage = (count) => {
     box.innerHTML = results.length
       ? `<div class="section-head" style="padding-top:18px"><h2 class="section-title">Найдено: ${results.length}</h2></div>
-         <div class="list" style="padding-top:0">${results.slice(0, count).map(([id, title]) => `
-           <a class="h-item" data-go="#/h/${id}/${lang}"><span class="h-num">№${id}</span><span class="h-title">${highlight(title, rawWords)}</span></a>`).join("")}</div>
+         <div class="list" style="padding-top:0">${results.slice(0, count).map((r) => `
+           <a class="h-item" data-go="#/h/${r.id}/${lang}"><span class="h-num">№${r.id}</span><span class="h-title">${shown(r)}</span></a>`).join("")}</div>
          ${results.length > count ? `<button class="btn ghost more-btn" data-act="moreResults">Показать ещё</button>` : ""}`
-      : `<div class="empty">${I.search}<h3>Ничего не найдено</h3><p>Попробуйте другое слово или его часть, например «молитв» вместо «молитвами».</p></div>`;
+      : `<div class="empty">${I.search}<h3>Ничего не найдено</h3><p>Проверьте написание или попробуйте другое слово — например, «молитва», «родители», «терпение».</p></div>`;
     actions.moreResults = () => renderPage(count + 40);
   };
   renderPage(40);
 }
+const searchCache = new Map();
 
 // ------------------------------------------------------------------ раздел
 
@@ -1334,8 +1337,12 @@ function startRoute() {
   // Скрипт telegram-web-app.js их уже прочитал, поэтому заменяем на маршрут главной.
   if (!location.hash.startsWith("#/")) history.replaceState(null, "", location.pathname + location.search + "#/");
 
-  // h2962_ru — хадис, c2962_ru — карточка. Из ссылки t.me/…?startapp=… или из адреса ?startapp=…
+  // h2962_ru — хадис, c2962_ru — карточка, q… — поиск из бота. Из ссылки t.me/…?startapp=… или из адреса ?startapp=…
   const param = (IN_TG && tg.initDataUnsafe?.start_param) || new URLSearchParams(location.search).get("startapp");
+  if (/^q[\w-]+$/.test(param || "") && currentRoute() === "#/") {
+    state.query = safe(() => new TextDecoder().decode(Uint8Array.from(atob(param.slice(1).replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)))) || "";
+    return false;
+  }
   const m = /^([hc])(\d+)(?:_([a-z]{2,4}))?$/.exec(param || "");
   if (!m || currentRoute() !== "#/") return false;
   const lang = m[3] || state.lang;

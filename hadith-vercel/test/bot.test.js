@@ -61,8 +61,57 @@ test("ссылка /start h2962 открывает хадис", async () => {
   assert.match(m.text, /кровопролитием/);
   const buttons = m.reply_markup.inline_keyboard.flat();
   assert.equal(buttons[0].web_app.url, "https://knigaletit88-ux.github.io/hadith/?startapp=h2962_ru");
-  assert.equal(buttons[1].web_app.url, "https://knigaletit88-ux.github.io/hadith/?startapp=c2962_ru");
-  assert.equal(buttons[2].switch_inline_query, "2962");
+  assert.equal(buttons[1].callback_data, "ar:2962");
+  assert.equal(buttons[2].web_app.url, "https://knigaletit88-ux.github.io/hadith/?startapp=c2962_ru");
+  assert.deepEqual(m.reply_markup.inline_keyboard[2].map((b) => b.text), ["⬅️ Пред.", "📤 Поделиться", "След. ➡️"]);
+  assert.equal(buttons[4].switch_inline_query, "2962");
+});
+
+const press = (data, message = { message_id: 5, date: 0, chat: { id: 42, type: "private" } }) =>
+  handleUpdate({ update_id: 9, callback_query: { id: "cb", from: user, chat_instance: "x", data, message } }, tg);
+const index = JSON.parse(await readFile(new URL("index.json", DATA_DIR), "utf8")).map(([id]) => id);
+
+test("«Пред.» и «След.» идут по порядку энциклопедии и меняют сообщение на месте", async () => {
+  await handleUpdate(msg(`/start h${index[1]}`), tg);
+  const nav = sent()[0].reply_markup.inline_keyboard[2];
+  assert.equal(nav[0].callback_data, `go:${index[0]}`);
+  assert.equal(nav[2].callback_data, `go:${index[2]}`);
+
+  calls = [];
+  await press(nav[2].callback_data, { message_id: 5, date: 1, chat: { id: 42, type: "private" }, text: `📜 Хадис №${index[1]}\n\n…` });
+  const edit = calls.find((c) => c.method === "editMessageText").params;
+  assert.equal(edit.message_id, 5);
+  assert.match(edit.text, new RegExp(`Хадис №${index[2]}`));
+  assert.equal(edit.reply_markup.inline_keyboard[2][2].callback_data, `go:${index[3]}`);
+  assert.equal(sent().length, 0);
+
+  // С первого хадиса «Пред.» ведёт на последний
+  calls = [];
+  await handleUpdate(msg(`/start h${index[0]}`), tg);
+  assert.equal(sent()[0].reply_markup.inline_keyboard[2][0].callback_data, `go:${index.at(-1)}`);
+
+  // Старое сообщение (недоступно для правки) — приходит новое
+  calls = [];
+  await press(`go:${index[2]}`);
+  assert.equal(calls.filter((c) => c.method === "editMessageText").length, 0);
+  assert.match(sent()[0].text, new RegExp(`Хадис №${index[2]}`));
+});
+
+test("«Оригинал» присылает арабский текст ответом на хадис", async () => {
+  await press("ar:2962", { message_id: 7, date: 1, chat: { id: 42, type: "private" }, text: "📜 Хадис №2962" });
+  const m = sent();
+  assert.equal(m[0].reply_parameters.message_id, 7);
+  assert.match(m[0].text, /Хадис №2962 — оригинал/);
+  assert.match(m.map((x) => x.text).join("\n"), /[\u0600-\u06FF]{3}/);
+  assert.match(m.at(-1).text, /<blockquote expandable>📕/);
+  assert.ok(m.every((x) => x.text.length <= 4096));
+});
+
+test("длинный оригинал делится на части", async () => {
+  await press("ar:4820");
+  const m = sent();
+  assert.ok(m.length > 1);
+  assert.ok(m.every((x) => x.text.length <= 4096));
 });
 
 test("номер хадиса и неизвестный номер", async () => {
@@ -71,6 +120,29 @@ test("номер хадиса и неизвестный номер", async () =>
   calls = [];
   await handleUpdate(msg("99999999"), tg);
   assert.match(sent()[0].text, /не найден/);
+});
+
+test("поиск в боте и в мини-приложении — один и тот же файл", async () => {
+  const bot = await readFile(new URL("../lib/search.js", import.meta.url), "utf8");
+  const app = await readFile(new URL("../../hadith/search.js", import.meta.url), "utf8");
+  assert.equal(bot, app, "скопируйте hadith/search.js в hadith-vercel/lib/search.js");
+});
+
+test("поиск ищет слово целиком с окончаниями: «мать» — не «принимать»", async () => {
+  const { total, items } = await search("мать", 500);
+  assert.ok(total > 50);
+  const words = items.flatMap((r) => `${r.title} ${r.text} ${r.intro}`.toLowerCase().match(/[а-яё]*мат[а-яё]*/g) || []);
+  assert.ok(words.includes("матери"));
+  assert.ok(!items.some((r) => !/(^|[^а-яё])мат(ь|ер)/i.test(`${r.title} ${r.text} ${r.intro}`)));
+
+  await handleUpdate(msg("мать"), tg);
+  const m = sent().at(-1);
+  assert.match(m.text, /<b>мать<\/b>|<b>Мать<\/b>|<b>матери<\/b>/);
+  assert.doesNotMatch(m.text, /принимать|думать/);
+  // «Все … — в энциклопедии» открывает поиск в мини-приложении
+  const all = m.reply_markup.inline_keyboard.at(-1)[0];
+  const param = new URL(all.web_app.url).searchParams.get("startapp");
+  assert.equal(Buffer.from(param.slice(1), "base64url").toString(), "мать");
 });
 
 test("поиск по словам: кнопки-номера открывают хадис", async () => {

@@ -10,7 +10,8 @@
 Что получается:
     data/languages.json             — языки энциклопедии
     data/<lang>/categories.json     — разделы: id, title, parent, ids (номера хадисов)
-    data/<lang>/index.json          — [[номер, заголовок], …] для поиска и списков
+    data/<lang>/index.json          — [[номер, заголовок], …] для списков
+    data/<lang>/search.json         — [[номер, текст хадиса, вступление «От …»], …] для поиска по словам
     data/<lang>/h/<номер>.json      — хадис целиком (+ reference из арабской версии)
     data/meta.json                  — дата обновления и список языков
 """
@@ -89,6 +90,15 @@ def clean_hadeeth(raw: dict) -> dict:
     return data
 
 
+def search_row(hid: str, hadeeth: dict, title: str) -> list:
+    """Текст для поиска; вступление («От Абу Хурайры … передаётся, что Пророк сказал:») — отдельно."""
+    text = (hadeeth.get("hadeeth") or title).strip()
+    intro = (hadeeth.get("hadeeth_intro") or "").strip()
+    if intro and text.startswith(intro) and len(text) > len(intro) + 10:
+        return [hid, text[len(intro):].strip(), intro]
+    return [hid, text]
+
+
 def sync_language(lang: str, out: Path, workers: int) -> dict:
     base = out / lang
     raw_cats = get("categories/list/", language=lang)
@@ -159,13 +169,16 @@ def sync_language(lang: str, out: Path, workers: int) -> dict:
     parent = {c["id"]: c["parent"] for c in cats}
     members: dict[str, list[str]] = {c["id"]: [] for c in cats}
     available = []
+    texts = []
     for hid in ids:
         path = hdir / f"{hid}.json"
         if not path.exists():
             continue
         available.append(hid)
+        hadeeth = json.loads(path.read_text(encoding="utf-8"))
+        texts.append(search_row(hid, hadeeth, titles[hid]))
         seen = set()
-        for cid in json.loads(path.read_text(encoding="utf-8")).get("categories") or []:
+        for cid in hadeeth.get("categories") or []:
             cid = str(cid)
             while cid and cid not in seen and cid in members:
                 seen.add(cid)
@@ -176,6 +189,7 @@ def sync_language(lang: str, out: Path, workers: int) -> dict:
 
     changed += write_json(base / "categories.json", [c for c in cats if c["ids"]])
     changed += write_json(base / "index.json", [[hid, titles[hid]] for hid in available])
+    changed += write_json(base / "search.json", texts)
 
     keep = {f"{hid}.json" for hid in ids}
     for path in hdir.glob("*.json"):
