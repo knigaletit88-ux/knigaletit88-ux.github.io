@@ -34,6 +34,8 @@ function redis([cmd, key, ...args]) {
     case "HSET": { const h = hash(); h.set(args[0], args[1]); db.set(key, h); return 1; }
     case "HDEL": { const h = hash(); const had = h.delete(args[0]); db.set(key, h); return Number(had); }
     case "HGETALL": return [...hash()].flat();
+    case "ZADD": return 1; // учёт пользователей — здесь не проверяется
+    case "MGET": return [key, ...args].map(() => null); // раздел намаза: «не ждём город»
     default: throw new Error("Redis: " + cmd);
   }
 }
@@ -55,6 +57,7 @@ const sent = () => calls.filter((c) => c.method === "sendMessage").map((c) => c.
 globalThis.fetch = async (url, opts = {}) => {
   url = String(url);
   if (url === "https://redis.test") return new Response(JSON.stringify({ result: redis(JSON.parse(opts.body)) }));
+  if (url === "https://redis.test/pipeline") return new Response(JSON.stringify(JSON.parse(opts.body).map((c) => ({ result: redis(c) }))));
   if (url.startsWith("https://data.test/ru/")) {
     try { return new Response(await readFile(new URL(url.slice("https://data.test/ru/".length), DATA_DIR))); } catch { return new Response("", { status: 404 }); }
   }

@@ -1,10 +1,11 @@
 // Логика бота: отвечает на сообщения, кнопки и inline-запросы.
 import { createHash } from "node:crypto";
-import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels } from "./channels.js";
+import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels, usersCommand } from "./channels.js";
 import { dailyId, getArabic, getHadith, neighbors, randomId, search, splitIntro } from "./hadith.js";
+import { HADITH_BUTTON, NAMAZ_BUTTON, NAMAZ_DOWN, forwardToNamaz, isNamaz, namazEnabled } from "./namaz.js";
 import { onChatMember, quizAddCommand, quizCallback, sendPersonalQuiz } from "./quiz.js";
 import { parts, snippet } from "./search.js";
-import { getChannels } from "./store.js";
+import { getChannels, trackUser } from "./store.js";
 
 export const APP_URL = process.env.APP_URL || "https://knigaletit88-ux.github.io/hadith/";
 const SITE = (id) => `https://sarhaan.com/hadeeth/ru/${id}/`;
@@ -82,6 +83,7 @@ const HELP = `<b>Как пользоваться</b>
 ⬅️ ➡️ Под хадисом — листать хадисы по порядку, 🕌 «Оригинал» — текст на арабском
 🌅 /today — хадис дня
 🎲 /random — случайный хадис
+🕌 /namaz — время намаза для вашего города и уведомления о нём
 🧩 /quiz — викторина дня (можно получать каждый день в 12:00)
 📢 /channels — полезные каналы
 📤 В любом чате напишите <code>@{bot} слово</code>, чтобы отправить хадис другу`;
@@ -183,6 +185,7 @@ async function sendGreeting(tg, msg, ctx) {
       inline_keyboard: [
         [appButton("📖 Открыть энциклопедию", "", ctx)],
         [{ text: "🌅 Хадис дня", callback_data: "day" }, { text: "🎲 Случайный", callback_data: "rnd" }],
+        ...(namazEnabled() && ctx.private ? [[NAMAZ_BUTTON]] : []),
         [{ text: "🧩 Викторина дня", callback_data: "quiz" }, ...(channels.length ? [{ text: "📢 Полезные каналы", callback_data: "channels" }] : [])],
         [{ text: "💚 Поделиться ботом", url: share }],
       ],
@@ -245,9 +248,11 @@ async function onMessage(tg, msg, ctx) {
   if (cmd === "channels") return sendChannels(tg, chatId);
   if (cmd === "id") return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `Ваш Telegram ID: <code>${esc(msg.from?.id)}</code>` });
   if (cmd === "admin") return ctx.private ? adminCommand(tg, msg) : undefined;
+  if (cmd === "users" || cmd === "stats") return ctx.private ? usersCommand(tg, msg) : undefined;
   if (cmd === "quiz") return sendPersonalQuiz(tg, chatId, ctx, msg.from?.id);
   if (cmd === "quiz_add") return ctx.private ? quizAddCommand(tg, msg, rest[0]) : undefined;
   if (cmd || !ctx.private) return; // в группах отвечаем только на команды
+  if (text === HADITH_BUTTON) return sendGreeting(tg, msg, ctx); // кнопка возврата из меню намаза
 
   const number = text.replace(/^[№#\s]+/, "");
   if (/^\d{1,9}$/.test(number)) return sendHadith(tg, chatId, number, ctx);
@@ -312,10 +317,40 @@ async function onInline(tg, iq, ctx) {
 
 let botUsername = process.env.BOT_USERNAME || "";
 
-export async function handleUpdate(update, tg) {
+// Сообщение для раздела «Время намаза»? Пересланный админом пост канала — нет, даже если в нём картинка.
+async function namazUpdate(update) {
+  const msg = update.message;
+  if (msg && isAdmin(msg.from?.id) && !(msg.text || "").startsWith("/") && channelRef(msg)) return false;
+  return isNamaz(update);
+}
+
+export async function handleUpdate(update, tg, token = process.env.BOT_TOKEN) {
+  // Учёт для админки: кто писал боту или нажимал кнопки в личном чате (включая раздел намаза).
+  // Идёт одновременно с ответом и не задерживает его.
+  const chat = update.message?.chat || update.callback_query?.message?.chat;
+  const from = update.message?.from || update.callback_query?.from;
+  const counted = chat?.type === "private" && from?.id && !from.is_bot ? trackUser(from.id) : null;
+  try {
+    return await dispatch(update, tg, token);
+  } finally {
+    await counted;
+  }
+}
+
+async function dispatch(update, tg, token) {
   if (!botUsername) botUsername = (await tg("getMe"))?.username || "";
   const chat = update.message?.chat || update.callback_query?.message?.chat;
   const ctx = { username: botUsername, private: !chat || chat.type === "private" };
+  if (await namazUpdate(update).catch(() => false)) {
+    try {
+      return await forwardToNamaz(update, token);
+    } catch (err) {
+      console.error("Раздел намаза:", err);
+      if (update.callback_query) await tg("answerCallbackQuery", { callback_query_id: update.callback_query.id });
+      if (chat) await tg("sendMessage", { chat_id: chat.id, text: NAMAZ_DOWN });
+      return;
+    }
+  }
   try {
     if (update.message) await onMessage(tg, update.message, ctx);
     else if (update.callback_query) await onCallback(tg, update.callback_query, ctx);
@@ -331,6 +366,8 @@ export const COMMANDS = [
   { command: "start", description: "Приветствие и меню" },
   { command: "today", description: "Хадис дня" },
   { command: "random", description: "Случайный хадис" },
+  { command: "namaz", description: "Время намаза" },
+  { command: "notify", description: "Уведомления о намазе" },
   { command: "app", description: "Открыть энциклопедию" },
   { command: "quiz", description: "Викторина дня" },
   { command: "channels", description: "Полезные каналы" },

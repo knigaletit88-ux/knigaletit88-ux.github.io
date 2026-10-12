@@ -1,5 +1,5 @@
 // Раздел «Полезные каналы»: список для всех (/channels, мини-приложение) и админка в чате с ботом (/admin).
-import { clearPending, getChannels, getPending, hasStore, saveChannels, setPending } from "./store.js";
+import { clearPending, getChannels, getPending, hasStore, saveChannels, setPending, userStats } from "./store.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
 const shorten = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s; };
@@ -82,8 +82,28 @@ ${list.length ? `В списке: <b>${list.length}</b>\n${lines.join("\n")}\n\n
 ${HOW_TO_ADD}`;
   const keyboard = list.map((c, i) => [{ text: `${i + 1}. ${shorten(c.title, 40)}`, callback_data: `ch:item:${c.key}` }]);
   if (list.length) keyboard.push([{ text: "👀 Как видят подписчики", callback_data: "channels" }]);
-  keyboard.push([{ text: "🧩 Викторина дня", callback_data: "qz:admin" }]);
+  keyboard.push([{ text: "🧩 Викторина дня", callback_data: "qz:admin" }, { text: "👥 Пользователи", callback_data: "ch:users" }]);
   return { text, reply_markup: { inline_keyboard: keyboard } };
+}
+
+// «Пользователи»: сколько людей пользуется ботом (учёт ведёт lib/store.js)
+const num = (n) => Number(n || 0).toLocaleString("ru-RU");
+
+async function usersView() {
+  const s = await userStats();
+  const since = s.since ? new Date(s.since).toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow" }) : "";
+  const text = `👥 <b>Пользователи бота</b>
+
+Всего: <b>${num(s.total)}</b>
+Новых: за сутки <b>${num(s.new1)}</b> · за 7 дней <b>${num(s.new7)}</b>
+Писали боту: за сутки <b>${num(s.active1)}</b> · за 7 дней <b>${num(s.active7)}</b> · за 30 дней <b>${num(s.active30)}</b>
+🕌 Настроили время намаза: <b>${num(s.namaz)}</b>
+
+<i>${since ? `Учёт ведётся с ${since}: считаются` : "Учёт только начался: будут считаться"} те, кто написал боту или нажал кнопку в личном чате. Кто пользовался ботом раньше, попадёт в счёт при следующем сообщении.</i>`;
+  return {
+    text,
+    reply_markup: { inline_keyboard: [[{ text: "🔄 Обновить", callback_data: "ch:users" }, { text: "« Админка", callback_data: "ch:list" }]] },
+  };
 }
 
 const describe = (c) => [
@@ -137,6 +157,15 @@ export async function adminCommand(tg, msg) {
   return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", link_preview_options: { is_disabled: true }, ...panel(await getChannels()) });
 }
 
+// /users — та же сводка, что по кнопке «Пользователи» в админке
+export async function usersCommand(tg, msg) {
+  const reply = (view) => tg("sendMessage", { chat_id: msg.chat.id, parse_mode: "HTML", ...view });
+  if (!adminIds().length) return reply({ text: ADMIN_HELP(msg.from?.id) });
+  if (!isAdmin(msg.from?.id)) return reply({ text: "Эта команда только для администратора бота." });
+  if (!hasStore()) return reply({ text: STORAGE_HELP });
+  return reply(await usersView());
+}
+
 // Админ прислал пересланный пост или ссылку → карточка канала с кнопкой «Добавить»
 export async function adminMessage(tg, msg, ref) {
   const chatId = msg.chat.id;
@@ -169,6 +198,10 @@ export async function adminCallback(tg, cq) {
   });
   const [, action, ...rest] = cq.data.split(":");
   const key = rest.join(":");
+  if (action === "users") {
+    await answer();
+    return edit(await usersView());
+  }
   const list = await getChannels();
   const i = list.findIndex((c) => c.key === key);
 
