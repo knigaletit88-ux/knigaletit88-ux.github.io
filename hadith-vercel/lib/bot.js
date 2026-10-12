@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels } from "./channels.js";
 import { dailyId, getArabic, getHadith, neighbors, randomId, search, splitIntro } from "./hadith.js";
+import { onChatMember, quizAddCommand, quizCallback, sendPersonalQuiz } from "./quiz.js";
 import { parts, snippet } from "./search.js";
 import { getChannels } from "./store.js";
 
@@ -9,17 +10,20 @@ export const APP_URL = process.env.APP_URL || "https://knigaletit88-ux.github.io
 const SITE = (id) => `https://sarhaan.com/hadeeth/ru/${id}/`;
 const LIMIT = 4000;
 
+// Вызов Bot API. При ошибке возвращает undefined, а сама ошибка лежит в call.lastError
 export function telegram(token) {
-  return async (method, params = {}) => {
+  const call = async (method, params = {}) => {
     const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
     });
     const data = await res.json().catch(() => ({}));
+    call.lastError = data.ok ? null : data;
     if (!data.ok) console.error(`Telegram ${method}:`, data.description || res.status);
     return data.result;
   };
+  return call;
 }
 
 // Секрет для заголовка X-Telegram-Bot-Api-Secret-Token: так бот принимает запросы только от Telegram
@@ -78,6 +82,7 @@ const HELP = `<b>Как пользоваться</b>
 ⬅️ ➡️ Под хадисом — листать хадисы по порядку, 🕌 «Оригинал» — текст на арабском
 🌅 /today — хадис дня
 🎲 /random — случайный хадис
+🧩 /quiz — викторина дня (можно получать каждый день в 12:00)
 📢 /channels — полезные каналы
 📤 В любом чате напишите <code>@{bot} слово</code>, чтобы отправить хадис другу`;
 
@@ -178,7 +183,7 @@ async function sendGreeting(tg, msg, ctx) {
       inline_keyboard: [
         [appButton("📖 Открыть энциклопедию", "", ctx)],
         [{ text: "🌅 Хадис дня", callback_data: "day" }, { text: "🎲 Случайный", callback_data: "rnd" }],
-        ...(channels.length ? [[{ text: "📢 Полезные каналы", callback_data: "channels" }]] : []),
+        [{ text: "🧩 Викторина дня", callback_data: "quiz" }, ...(channels.length ? [{ text: "📢 Полезные каналы", callback_data: "channels" }] : [])],
         [{ text: "💚 Поделиться ботом", url: share }],
       ],
     },
@@ -240,6 +245,8 @@ async function onMessage(tg, msg, ctx) {
   if (cmd === "channels") return sendChannels(tg, chatId);
   if (cmd === "id") return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `Ваш Telegram ID: <code>${esc(msg.from?.id)}</code>` });
   if (cmd === "admin") return ctx.private ? adminCommand(tg, msg) : undefined;
+  if (cmd === "quiz") return sendPersonalQuiz(tg, chatId, ctx, msg.from?.id);
+  if (cmd === "quiz_add") return ctx.private ? quizAddCommand(tg, msg, rest[0]) : undefined;
   if (cmd || !ctx.private) return; // в группах отвечаем только на команды
 
   const number = text.replace(/^[№#\s]+/, "");
@@ -255,6 +262,7 @@ async function onCallback(tg, cq, ctx) {
   const chatId = cq.message?.chat?.id;
   const data = cq.data || "";
   if (data.startsWith("ch:")) return adminCallback(tg, cq);
+  if (data === "quiz" || data.startsWith("qz:")) return quizCallback(tg, cq, ctx);
   await tg("answerCallbackQuery", { callback_query_id: cq.id });
   if (!chatId) return;
   if (data === "rnd") return sendHadith(tg, chatId, await randomId(), ctx);
@@ -312,6 +320,7 @@ export async function handleUpdate(update, tg) {
     if (update.message) await onMessage(tg, update.message, ctx);
     else if (update.callback_query) await onCallback(tg, update.callback_query, ctx);
     else if (update.inline_query) await onInline(tg, update.inline_query, ctx);
+    else if (update.my_chat_member) await onChatMember(tg, update.my_chat_member);
   } catch (err) {
     console.error("Ошибка обработки:", err);
     if (chat) await tg("sendMessage", { chat_id: chat.id, text: "⚠️ Не получилось загрузить хадисы. Попробуйте, пожалуйста, чуть позже." });
@@ -323,6 +332,7 @@ export const COMMANDS = [
   { command: "today", description: "Хадис дня" },
   { command: "random", description: "Случайный хадис" },
   { command: "app", description: "Открыть энциклопедию" },
+  { command: "quiz", description: "Викторина дня" },
   { command: "channels", description: "Полезные каналы" },
   { command: "help", description: "Как пользоваться" },
 ];

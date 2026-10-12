@@ -9,6 +9,7 @@ const INDEX_TTL = 6 * 3600e3;
 
 let index = null; // { at, items: [[id, title], …], pos: Map(id → место в списке) }
 let texts = null; // { at, src, items: [[id, title, текст, вступление], …] } — для поиска
+let sahih = null; // { at, ids: Set } — достоверные хадисы, для викторины
 const hadiths = new Map();
 
 // Тот же расчёт, что в мини-приложении, — «Хадис дня» совпадает
@@ -57,7 +58,8 @@ export async function getHadith(id) {
 }
 
 // Полные тексты для поиска (search.json); если файла нет — ищем по заголовкам
-async function searchItems() {
+// [[id, заголовок, текст хадиса, вступление], …]
+export async function searchItems() {
   const items = await getIndex();
   if (texts && texts.src === items && Date.now() - texts.at < INDEX_TTL) return texts.items;
   try {
@@ -89,6 +91,27 @@ export async function neighbors(id) {
   return { prev: index.items[(i - 1 + n) % n][0], next: index.items[(i + 1) % n][0], pos: i + 1, total: n };
 }
 
+// Только «достоверный» (صحيح): без «хорошего», «достоверного в совокупности» и «достоверной цепочки»
+export function isSahih(h) {
+  const ar = String(h?.grade_ar || "").replace(/[\u064B-\u065F\u0670]/g, "").trim();
+  if (ar) return ar === "صحيح" || ar === "صحيحان";
+  return /^(достоверный( хадис)?|обе версии достоверные)\.?$/i.test(String(h?.grade || "").trim());
+}
+
+// Номера достоверных хадисов (sahih.json); null — список недоступен
+export async function sahihIds() {
+  if (sahih && Date.now() - sahih.at < INDEX_TTL) return sahih.ids;
+  try {
+    const ids = await getJson(`${DATA_URL}/sahih.json`);
+    if (!ids?.length) throw new Error("нет sahih.json");
+    sahih = { at: Date.now(), ids: new Set(ids.map(String)) };
+  } catch (err) {
+    console.error("Список достоверных:", err.message);
+    if (!sahih) return null;
+  }
+  return sahih.ids;
+}
+
 // Оригинал на арабском: из копии на сайте, а если там нет — из арабской версии API
 export async function getArabic(id) {
   const h = await getHadith(id);
@@ -117,5 +140,6 @@ export function splitIntro(h) {
 export function resetCache() {
   index = null;
   texts = null;
+  sahih = null;
   hadiths.clear();
 }

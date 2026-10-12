@@ -1,0 +1,25 @@
+# Викторина дня: ровно в 12:00 по Москве просит бота на Vercel отправить опрос.
+# GitHub запускает расписание с задержкой, поэтому задача стартует заранее и ждёт 12:00.
+# Запасной вызов — Vercel Cron (hadith-vercel/vercel.json). Бот отправляет викторину один раз в день.
+name: Викторина дня
+
+on:
+  schedule:
+    - cron: "37 8 * * *" # 11:37 по Москве
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quiz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Дождаться 12:00 по Москве
+        run: |
+          target=$(date -u -d "09:00" +%s)
+          now=$(date -u +%s)
+          if [ "$now" -lt "$target" ]; then sleep $((target - now)); fi
+      - name: Отправить викторину
+        run: curl -fsS --retry 3 --retry-delay 20 --retry-all-errors --max-time 90 "https://knigaletit88-uxgithubio-hadith-verc.vercel.app/api/quiz"

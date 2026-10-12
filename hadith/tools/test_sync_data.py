@@ -29,13 +29,27 @@ def fake_get(path, **params):
         if params["language"] == "ar":
             return {"id": hid, "reference": "صحيح البخاري\r\n(1)"}
         return {"id": hid, "title": f"Хадис {hid}", "hadeeth": "Текст\r\n", "hints": ["Вывод\r", ""],
-                "categories": HADITH_CATS[hid], "words_meanings_ar": []}
+                "categories": HADITH_CATS[hid], "words_meanings_ar": [], "grade": "Достоверный",
+                "grade_ar": "حسن" if hid == "11" else "صحيح"}
     raise AssertionError(path)
 
 
 @pytest.fixture(autouse=True)
 def api(monkeypatch):
     monkeypatch.setattr(sync_data, "get", fake_get)
+
+
+@pytest.mark.parametrize("grade,grade_ar,ok", [
+    ("Достоверный", "صحيح", True),
+    ("Обе версии достоверные", "صحيحان", True),
+    ("Хороший хадис", "حسن", False),
+    ("Достоверный хадис лишь в совокупности с другим", "صحيح لغيره", False),
+    ("Его цепочка передатчиков достоверная", "إسناده صحيح", False),
+    ("Достоверный хадис", "", True),
+    ("Хороший хадис", "", False),
+])
+def test_is_sahih(grade, grade_ar, ok):
+    assert sync_data.is_sahih({"grade": grade, "grade_ar": grade_ar}) is ok
 
 
 def test_sync(tmp_path, monkeypatch):
@@ -46,6 +60,7 @@ def test_sync(tmp_path, monkeypatch):
     assert index == [["10", "Хадис 10"], ["11", "Хадис 11"], ["12", "Хадис 12"]]  # 13 не переведён
     search = json.loads((tmp_path / "ru/search.json").read_text())
     assert search == [["10", "Текст"], ["11", "Текст"], ["12", "Текст"]]
+    assert json.loads((tmp_path / "ru/sahih.json").read_text()) == ["10", "12"]  # 11 — «хороший»
     cats = {c["id"]: c["ids"] for c in json.loads((tmp_path / "ru/categories.json").read_text())}
     assert cats == {"1": ["10", "11", "12"], "2": ["10", "11"], "3": ["12"]}
 
