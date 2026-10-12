@@ -29,6 +29,7 @@ def fake_get(path, **params):
         if params["language"] == "ar":
             return {"id": hid, "reference": "صحيح البخاري\r\n(1)"}
         return {"id": hid, "title": f"Хадис {hid}", "hadeeth": "Текст\r\n", "hints": ["Вывод\r", ""],
+                "explanation": "Он сказал: &lt;Аллах Всевышний сказал&gt;",
                 "categories": HADITH_CATS[hid], "words_meanings_ar": []}
     raise AssertionError(path)
 
@@ -51,6 +52,7 @@ def test_sync(tmp_path, monkeypatch):
 
     h = json.loads((tmp_path / "ru/h/12.json").read_text())
     assert h["hadeeth"] == "Текст" and h["hints"] == ["Вывод"]
+    assert h["explanation"] == "Он сказал: <Аллах Всевышний сказал>"
     assert h["reference"] == "صحيح البخاري\n(1)"
     assert "words_meanings_ar" not in h
     meta = json.loads((tmp_path / "meta.json").read_text())

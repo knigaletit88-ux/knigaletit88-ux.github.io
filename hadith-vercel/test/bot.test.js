@@ -114,6 +114,13 @@ test("длинный оригинал делится на части", async () 
   assert.ok(m.every((x) => x.text.length <= 4096));
 });
 
+test("кавычки‑уголки в тексте хадиса показываются как знаки, а не &lt; &gt;", async () => {
+  await handleUpdate(msg("3362"), tg);
+  const text = sent().map((m) => m.text).join("\n");
+  assert.match(text, /&lt;Аллах Всевышний сказал/); // в HTML-сообщении Telegram это знак «<»
+  assert.doesNotMatch(text, /&amp;lt;|&amp;gt;/);
+});
+
 test("номер хадиса и неизвестный номер", async () => {
   await handleUpdate(msg("№5907"), tg);
   assert.match(sent()[0].text, /Хадис №5907/);

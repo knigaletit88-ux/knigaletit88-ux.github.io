@@ -23,6 +23,14 @@ const DAY = 864e5;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const safe = (fn) => { try { return fn(); } catch { return undefined; } };
+// В текстах энциклопедии кавычки‑уголки иногда приходят как &lt; &gt; — показываем обычные знаки
+const ENTITIES = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'", "#39": "'", "#039": "'" };
+const unescapeHtml = (value) => {
+  if (typeof value === "string") return value.replace(/&(lt|gt|amp|quot|apos|#0?39);/g, (_, k) => ENTITIES[k]);
+  if (Array.isArray(value)) return value.map(unescapeHtml);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, unescapeHtml(v)]));
+  return value;
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const plural = (n, one, few, many) => {
   const m10 = n % 10, m100 = n % 100;
@@ -266,7 +274,7 @@ const DB = {
       const roots = (await DB.categories(lang)).filter((c) => !c.parent && c.count > 0);
       const lists = await Promise.all(roots.map((r) => fetchJson(apiUrl("/hadeeths/list/", { language: lang, category_id: r.id, page: 1, per_page: 2000 }))));
       const seen = new Map();
-      for (const list of lists) for (const it of list.data || []) if (!seen.has(String(it.id))) seen.set(String(it.id), it.title);
+      for (const list of lists) for (const it of list.data || []) if (!seen.has(String(it.id))) seen.set(String(it.id), unescapeHtml(it.title));
       return [...seen].map(([id, title]) => [id, title]);
     });
   },
@@ -296,7 +304,7 @@ const DB = {
     const res = await fetchJson(apiUrl("/hadeeths/list/", { language: lang, category_id: catId, page, per_page: perPage }));
     const meta = res.meta || {};
     return {
-      items: (res.data || []).map((it) => ({ id: String(it.id), title: it.title })),
+      items: (res.data || []).map((it) => ({ id: String(it.id), title: unescapeHtml(it.title) })),
       total: +meta.total_items || 0,
       pages: +meta.last_page || 1,
     };
@@ -304,9 +312,9 @@ const DB = {
 
   async hadith(lang, id) {
     if (await hasMirror(lang)) {
-      try { return { ...(await fetchJson(`${CFG.mirror}/${lang}/h/${id}.json`)), lang }; } catch { /* ниже — API */ }
+      try { return { ...unescapeHtml(await fetchJson(`${CFG.mirror}/${lang}/h/${id}.json`)), lang }; } catch { /* ниже — API */ }
     }
-    return { ...(await fetchJson(apiUrl("/hadeeths/one/", { language: lang, id }))), lang };
+    return { ...unescapeHtml(await fetchJson(apiUrl("/hadeeths/one/", { language: lang, id }))), lang };
   },
 
   // Хадис на выбранном языке, а если перевода нет — на русском, английском или арабском.
@@ -1287,7 +1295,7 @@ async function shareCard(canvas, h) {
 }
 
 async function saveCard(canvas, h) {
-  const blob = await cardBlob(canvas);
+  let blob = await cardBlob(canvas);
   if (!IN_TG) {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -1297,19 +1305,51 @@ async function saveCard(canvas, h) {
     toast("Карточка сохранена");
     return;
   }
-  showCardSheet(blob, h);
+  // Очень большие карточки — в JPEG, чтобы уложиться в предел сервера
+  if (blob.size > 4e6) blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+  await deliverCard(blob, h);
 }
 
-function showCardSheet(blob, h) {
+// В Telegram ссылки «скачать» не работают. Поэтому бот присылает карточку файлом в чат,
+// а в новых версиях Telegram сразу открывается окно «Скачать файл».
+async function deliverCard(blob, h) {
+  if (!tg.initData) { showCardSheet(blob, h); return; }
+  toast("Сохраняю карточку…");
+  try {
+    const res = await fetch(`${CFG.server}/api/card?id=${encodeURIComponent(h.id)}&lang=${encodeURIComponent(h.lang)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-Init-Data": tg.initData },
+      body: blob,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { reason: data.error });
+    haptic("success");
+    const canDownload = data.url && typeof tg.downloadFile === "function" && safe(() => tg.isVersionAtLeast("8.0"));
+    if (canDownload) safe(() => tg.downloadFile({ url: data.url, file_name: data.name }));
+    toast(canDownload ? "Карточка также отправлена вам в чат с ботом" : "Карточка отправлена вам в чат с ботом — откройте её и сохраните");
+  } catch (err) {
+    console.error(err);
+    document.getElementById("toast").hidden = true;
+    showCardSheet(blob, h, err.reason === "chat"
+      ? `Чтобы бот прислал карточку, откройте @${state.bot} и нажмите «Старт».`
+      : "Не получилось отправить карточку в чат.");
+  }
+}
+
+function showCardSheet(blob, h, note = "") {
   const url = URL.createObjectURL(blob);
+  const viaChat = IN_TG && Boolean(tg.initData);
+  const save = viaChat
+    ? `<button class="btn gold" data-act="send">${I.download} Сохранить в чат</button>`
+    : `<a class="btn gold" href="${url}" download="hadith-${esc(h.id)}.png">${I.download} Скачать</a>`;
   openSheet(`
     <h3>Карточка готова</h3>
     <img src="${url}" alt="Карточка хадиса №${esc(h.id)}">
-    <p class="hint">Нажмите на картинку и удерживайте, затем выберите «Сохранить» — она появится в галерее.</p>
+    <p class="hint">${note ? `${esc(note)} ` : ""}${viaChat ? "«Сохранить в чат» — бот пришлёт карточку файлом, из чата её можно сохранить в галерею." : "Нажмите на картинку и удерживайте, затем выберите «Сохранить»."}</p>
     <div class="btn-row" style="margin-top:12px">
-      <a class="btn gold" href="${url}" download="hadith-${esc(h.id)}.png">${I.download} Скачать</a>
+      ${save}
       <button class="btn ghost" data-act="close">Готово</button>
-    </div>`, { close: closeSheet });
+    </div>`, { close: closeSheet, send: () => { closeSheet(); deliverCard(blob, h); } });
 }
 
 // ------------------------------------------------------------------- запуск

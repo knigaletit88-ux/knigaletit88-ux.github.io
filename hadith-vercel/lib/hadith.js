@@ -11,6 +11,15 @@ let index = null; // { at, items: [[id, title], …], pos: Map(id → место
 let texts = null; // { at, src, items: [[id, title, текст, вступление], …] } — для поиска
 const hadiths = new Map();
 
+// В текстах энциклопедии кавычки‑уголки иногда приходят как &lt; &gt; — показываем обычные знаки
+const ENTITIES = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'", "#39": "'", "#039": "'" };
+export const unescapeHtml = (value) => {
+  if (typeof value === "string") return value.replace(/&(lt|gt|amp|quot|apos|#0?39);/g, (_, k) => ENTITIES[k]);
+  if (Array.isArray(value)) return value.map(unescapeHtml);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, unescapeHtml(v)]));
+  return value;
+};
+
 // Тот же расчёт, что в мини-приложении, — «Хадис дня» совпадает
 export function hashStr(s) {
   let h = 2166136261;
@@ -30,7 +39,7 @@ export async function getIndex() {
   try {
     const items = await getJson(`${DATA_URL}/index.json`);
     if (!items?.length) throw new Error("пустой индекс");
-    const list = items.map(([id, title]) => [String(id), title]);
+    const list = items.map(([id, title]) => [String(id), unescapeHtml(title)]);
     index = { at: Date.now(), items: list, pos: new Map(list.map(([id], i) => [id, i])) };
   } catch (err) {
     if (!index) throw err;
@@ -50,6 +59,7 @@ export async function getHadith(id) {
   }
   if (!h) h = await getJson(`${API}/hadeeths/one/?language=ru&id=${encodeURIComponent(id)}`).catch(() => null);
   if (h) {
+    h = unescapeHtml(h);
     hadiths.set(id, h);
     if (hadiths.size > 300) hadiths.delete(hadiths.keys().next().value);
   }
@@ -63,7 +73,7 @@ async function searchItems() {
   try {
     const rows = await getJson(`${DATA_URL}/search.json`);
     if (!rows?.length) throw new Error("нет search.json");
-    const byId = new Map(rows.map(([id, ...rest]) => [String(id), rest]));
+    const byId = new Map(rows.map(([id, ...rest]) => [String(id), unescapeHtml(rest)]));
     texts = { at: Date.now(), src: items, items: items.map(([id, title]) => [id, title, ...(byId.get(id) || [])]) };
   } catch (err) {
     console.error("Поиск без search.json:", err.message);
@@ -94,7 +104,7 @@ export async function getArabic(id) {
   const h = await getHadith(id);
   if (h?.hadeeth_ar) return { text: h.hadeeth_ar, attribution: h.attribution_ar, grade: h.grade_ar, reference: h.reference };
   const ar = await getJson(`${API}/hadeeths/one/?language=ar&id=${encodeURIComponent(id)}`).catch(() => null);
-  return ar?.hadeeth ? { text: ar.hadeeth, attribution: ar.attribution, grade: ar.grade, reference: ar.reference } : null;
+  return ar?.hadeeth ? unescapeHtml({ text: ar.hadeeth, attribution: ar.attribution, grade: ar.grade, reference: ar.reference }) : null;
 }
 
 export async function dailyId(date = new Date()) {

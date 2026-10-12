@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import json
 import sys
 import time
@@ -72,6 +73,17 @@ def write_json(path: Path, data) -> bool:
     return True
 
 
+def unescape(value):
+    """В текстах API кавычки‑уголки приходят как &lt; &gt; — возвращаем обычные знаки."""
+    if isinstance(value, str):
+        return html.unescape(value)
+    if isinstance(value, list):
+        return [unescape(v) for v in value]
+    if isinstance(value, dict):
+        return {k: unescape(v) for k, v in value.items()}
+    return value
+
+
 def clean_hadeeth(raw: dict) -> dict:
     keep = (
         "id", "title", "hadeeth", "hadeeth_intro", "attribution", "grade", "explanation", "hints",
@@ -79,7 +91,7 @@ def clean_hadeeth(raw: dict) -> dict:
         "hadeeth_ar", "words_meanings_ar",
         "attribution_ar", "grade_ar",
     )
-    data = {k: raw[k] for k in keep if raw.get(k) not in (None, "", [])}
+    data = {k: unescape(raw[k]) for k in keep if raw.get(k) not in (None, "", [])}
     for key in ("hints", "hints_ar"):
         if key in data:
             data[key] = [h.replace("\r", "").strip() for h in data[key] if h and h.strip()]
@@ -105,7 +117,7 @@ def sync_language(lang: str, out: Path, workers: int) -> dict:
     cats = [
         {
             "id": str(c["id"]),
-            "title": (c.get("title") or "").strip(),
+            "title": html.unescape(c.get("title") or "").strip(),
             "parent": str(c["parent_id"]) if c.get("parent_id") not in (None, "", 0, "0") else None,
         }
         for c in raw_cats
@@ -119,7 +131,7 @@ def sync_language(lang: str, out: Path, workers: int) -> dict:
         while page <= last:
             res = get("hadeeths/list/", language=lang, category_id=root["id"], page=page, per_page=2000)
             for item in res.get("data") or []:
-                titles.setdefault(str(item["id"]), (item.get("title") or "").strip())
+                titles.setdefault(str(item["id"]), html.unescape(item.get("title") or "").strip())
             last = int((res.get("meta") or {}).get("last_page") or 1)
             page += 1
     if not titles:
