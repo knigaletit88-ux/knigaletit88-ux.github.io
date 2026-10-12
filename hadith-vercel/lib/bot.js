@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels, usersCommand } from "./channels.js";
 import { dailyId, getArabic, getHadith, neighbors, randomId, search, splitIntro } from "./hadith.js";
 import { HADITH_BUTTON, NAMAZ_BUTTON, NAMAZ_DOWN, forwardToNamaz, isNamaz, namazEnabled } from "./namaz.js";
-import { onChatMember, quizAddCommand, quizCallback, sendPersonalQuiz } from "./quiz.js";
 import { parts, snippet } from "./search.js";
 import { getChannels, trackUser } from "./store.js";
 
@@ -11,20 +10,17 @@ export const APP_URL = process.env.APP_URL || "https://knigaletit88-ux.github.io
 const SITE = (id) => `https://sarhaan.com/hadeeth/ru/${id}/`;
 const LIMIT = 4000;
 
-// Вызов Bot API. При ошибке возвращает undefined, а сама ошибка лежит в call.lastError
 export function telegram(token) {
-  const call = async (method, params = {}) => {
+  return async (method, params = {}) => {
     const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
     });
     const data = await res.json().catch(() => ({}));
-    call.lastError = data.ok ? null : data;
     if (!data.ok) console.error(`Telegram ${method}:`, data.description || res.status);
     return data.result;
   };
-  return call;
 }
 
 // Секрет для заголовка X-Telegram-Bot-Api-Secret-Token: так бот принимает запросы только от Telegram
@@ -84,7 +80,6 @@ const HELP = `<b>Как пользоваться</b>
 🌅 /today — хадис дня
 🎲 /random — случайный хадис
 🕌 /namaz — время намаза для вашего города и уведомления о нём
-🧩 /quiz — викторина дня (можно получать каждый день в 12:00)
 📢 /channels — полезные каналы
 📤 В любом чате напишите <code>@{bot} слово</code>, чтобы отправить хадис другу`;
 
@@ -186,7 +181,7 @@ async function sendGreeting(tg, msg, ctx) {
         [appButton("📖 Открыть энциклопедию", "", ctx)],
         [{ text: "🌅 Хадис дня", callback_data: "day" }, { text: "🎲 Случайный", callback_data: "rnd" }],
         ...(namazEnabled() && ctx.private ? [[NAMAZ_BUTTON]] : []),
-        [{ text: "🧩 Викторина дня", callback_data: "quiz" }, ...(channels.length ? [{ text: "📢 Полезные каналы", callback_data: "channels" }] : [])],
+        ...(channels.length ? [[{ text: "📢 Полезные каналы", callback_data: "channels" }]] : []),
         [{ text: "💚 Поделиться ботом", url: share }],
       ],
     },
@@ -249,8 +244,6 @@ async function onMessage(tg, msg, ctx) {
   if (cmd === "id") return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `Ваш Telegram ID: <code>${esc(msg.from?.id)}</code>` });
   if (cmd === "admin") return ctx.private ? adminCommand(tg, msg) : undefined;
   if (cmd === "users" || cmd === "stats") return ctx.private ? usersCommand(tg, msg) : undefined;
-  if (cmd === "quiz") return sendPersonalQuiz(tg, chatId, ctx, msg.from?.id);
-  if (cmd === "quiz_add") return ctx.private ? quizAddCommand(tg, msg, rest[0]) : undefined;
   if (cmd || !ctx.private) return; // в группах отвечаем только на команды
   if (text === HADITH_BUTTON) return sendGreeting(tg, msg, ctx); // кнопка возврата из меню намаза
 
@@ -267,7 +260,6 @@ async function onCallback(tg, cq, ctx) {
   const chatId = cq.message?.chat?.id;
   const data = cq.data || "";
   if (data.startsWith("ch:")) return adminCallback(tg, cq);
-  if (data === "quiz" || data.startsWith("qz:")) return quizCallback(tg, cq, ctx);
   await tg("answerCallbackQuery", { callback_query_id: cq.id });
   if (!chatId) return;
   if (data === "rnd") return sendHadith(tg, chatId, await randomId(), ctx);
@@ -355,7 +347,6 @@ async function dispatch(update, tg, token) {
     if (update.message) await onMessage(tg, update.message, ctx);
     else if (update.callback_query) await onCallback(tg, update.callback_query, ctx);
     else if (update.inline_query) await onInline(tg, update.inline_query, ctx);
-    else if (update.my_chat_member) await onChatMember(tg, update.my_chat_member);
   } catch (err) {
     console.error("Ошибка обработки:", err);
     if (chat) await tg("sendMessage", { chat_id: chat.id, text: "⚠️ Не получилось загрузить хадисы. Попробуйте, пожалуйста, чуть позже." });
@@ -369,7 +360,6 @@ export const COMMANDS = [
   { command: "namaz", description: "Время намаза" },
   { command: "notify", description: "Уведомления о намазе" },
   { command: "app", description: "Открыть энциклопедию" },
-  { command: "quiz", description: "Викторина дня" },
   { command: "channels", description: "Полезные каналы" },
   { command: "help", description: "Как пользоваться" },
 ];

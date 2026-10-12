@@ -101,24 +101,3 @@ export const saveChannels = (list) => redis("SET", CHANNELS, JSON.stringify(list
 export const setPending = (adminId, channel) => redis("SET", PENDING(adminId), JSON.stringify(channel), "EX", "3600");
 export const getPending = async (adminId) => parse(await redis("GET", PENDING(adminId)), null);
 export const clearPending = (adminId) => redis("DEL", PENDING(adminId));
-
-// Простые команды Redis для викторины: подписчики, каналы, «сегодня уже отправлено»
-export const kv = {
-  get: async (key) => parse(await redis("GET", key), null),
-  // Записать, только если ключа ещё нет; true — записали
-  add: async (key, value, ttl) => (await redis("SET", key, JSON.stringify(value), "NX", "EX", String(ttl))) === "OK",
-  del: (key) => redis("DEL", key),
-  sadd: (key, member) => redis("SADD", key, String(member)),
-  srem: (key, member) => redis("SREM", key, String(member)),
-  sismember: async (key, member) => Number(await redis("SISMEMBER", key, String(member))) === 1,
-  smembers: async (key) => (await redis("SMEMBERS", key)) || [],
-  scard: async (key) => Number(await redis("SCARD", key)) || 0,
-  hset: (key, field, value) => redis("HSET", key, String(field), JSON.stringify(value)),
-  hdel: (key, field) => redis("HDEL", key, String(field)),
-  hgetall: async (key) => {
-    const flat = (await redis("HGETALL", key)) || [];
-    const out = {};
-    for (let i = 0; i < flat.length; i += 2) out[flat[i]] = parse(flat[i + 1], {});
-    return out;
-  },
-};

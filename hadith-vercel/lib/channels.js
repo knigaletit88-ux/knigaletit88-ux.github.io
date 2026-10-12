@@ -82,7 +82,7 @@ ${list.length ? `В списке: <b>${list.length}</b>\n${lines.join("\n")}\n\n
 ${HOW_TO_ADD}`;
   const keyboard = list.map((c, i) => [{ text: `${i + 1}. ${shorten(c.title, 40)}`, callback_data: `ch:item:${c.key}` }]);
   if (list.length) keyboard.push([{ text: "👀 Как видят подписчики", callback_data: "channels" }]);
-  keyboard.push([{ text: "🧩 Викторина дня", callback_data: "qz:admin" }, { text: "👥 Пользователи", callback_data: "ch:users" }]);
+  keyboard.push([{ text: "👥 Пользователи", callback_data: "ch:users" }]);
   return { text, reply_markup: { inline_keyboard: keyboard } };
 }
 

@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   const ok = await tg("setWebhook", {
     url,
     secret_token: webhookSecret(token),
-    allowed_updates: ["message", "callback_query", "inline_query", "my_chat_member"],
+    allowed_updates: ["message", "callback_query", "inline_query"],
     drop_pending_updates: true,
   });
   await tg("setMyCommands", { commands: COMMANDS });
