@@ -25,6 +25,7 @@ const tg = async (method, params) => {
   if (method === "getMe") return { username: "s_unnabot" };
   if (method === "getChat") return CHATS[String(params.chat_id).toLowerCase()];
   if (method === "getFile") return { file_path: "photos/file_1.jpg" };
+  if (method === "getUserProfilePhotos") return params.user_id === 777 ? { total_count: 1, photos: [[{ file_id: "bp-small", width: 160 }, { file_id: "bp-big", width: 640 }]] } : { total_count: 0, photos: [] };
   return true;
 };
 const sent = () => calls.filter((c) => c.method === "sendMessage").map((c) => c.params);
@@ -135,7 +136,7 @@ test("админка: порядок, удаление, устаревшая к�
   await handleUpdate(msg("/admin"), tg);
   const panel = sent()[0];
   assert.match(panel.text, /В списке: <b>2<\/b>/);
-  assert.deepEqual(buttons(panel).map((b) => b.callback_data), ["ch:item:ilm_channel", "ch:item:sunna_daily", "channels", "ch:users"]);
+  assert.deepEqual(buttons(panel).map((b) => b.callback_data), ["ch:item:ilm_channel", "ch:item:sunna_daily", "channels", "bt:list", "ch:users"]);
 
   await press("ch:up:sunna_daily");
   assert.deepEqual(stored().map((c) => c.key), ["sunna_daily", "ilm_channel"]);
@@ -235,4 +236,96 @@ test("API мини-приложения: список и аватарки", asyn
   const down = await call(channelsApi, "/api/channels");
   assert.equal(down.statusCode, 503);
   assert.deepEqual(JSON.parse(down.body).channels, []);
+});
+
+const storedBots = () => JSON.parse(redis.get("hadith:bots") || "[]");
+async function addBot(text, extra) {
+  await handleUpdate(msg(text, 42, extra), tg);
+  const preview = sent().at(-1);
+  const add = buttons(preview).find((b) => b.callback_data?.startsWith("bt:add:"));
+  await press(add.callback_data);
+  return preview;
+}
+
+test("«📌 Показывать первым» ставит канал на первое место", async () => {
+  await addChannel("@ilm_channel");
+  await addChannel("@sunna_daily");
+  await addChannel("https://t.me/+Secret12\nЗакрытый");
+  calls = [];
+  await press("ch:item:+Secret12");
+  const view = edits().at(-1);
+  assert.match(view.text, /Место в списке: 3 из 3/);
+  assert.equal(buttons(view)[0].callback_data, "ch:top:+Secret12");
+  await press("ch:top:+Secret12");
+  assert.deepEqual(stored().map((c) => c.key), ["+Secret12", "ilm_channel", "sunna_daily"]);
+  assert.match(edits().at(-1).text, /Место в списке: 1 из 3 — показывается первым/);
+  assert.ok(!buttons(edits().at(-1)).some((b) => b.callback_data?.startsWith("ch:top:")));
+  // В боте и в мини-приложении — в новом порядке
+  calls = [];
+  await handleUpdate(msg("/channels", 5), tg);
+  assert.equal(buttons(sent()[0])[0].url, "https://t.me/+Secret12");
+});
+
+test("полезные боты: распознавание, добавление пересылкой и ссылкой, свой раздел", async () => {
+  assert.deepEqual(channelRef({ text: "@QuranAudioBot" }), { bot: true, username: "QuranAudioBot", note: "" });
+  assert.deepEqual(channelRef({ text: "https://t.me/quran_bot?start=ref\nКоран\nЧтение и аудио" }), { bot: true, username: "quran_bot", note: "Коран\nЧтение и аудио" });
+  const botUser = { id: 777, is_bot: true, first_name: "Азкары", username: "AzkarBot" };
+  assert.deepEqual(channelRef({ text: "Привет", forward_origin: { type: "user", sender_user: botUser } }), { bot: true, user: botUser, username: "AzkarBot", note: "" });
+  assert.equal(channelRef({ text: "Привет", forward_origin: { type: "user", sender_user: { id: 5, is_bot: false, first_name: "Человек" } } }), null);
+
+  // Пересланное сообщение от бота: название и аватарка из Telegram
+  const preview = await addBot("Ас-саляму алейкум!", { forward_origin: { type: "user", sender_user: botUser, date: 0 } });
+  assert.match(preview.text, /Добавить в «Полезные боты»/);
+  assert.match(preview.text, /Азкары/);
+  // По ссылке: название и описание из текста
+  await addBot("@quran_bot\nКоран\nЧтение и аудио");
+  assert.deepEqual(storedBots().map((b) => [b.key, b.title, b.description, b.photo, b.userId]), [
+    ["azkarbot", "Азкары", "", true, 777],
+    ["quran_bot", "Коран", "Чтение и аудио", false, undefined],
+  ]);
+  assert.equal(stored().length, 0); // каналы не тронуты
+  // Повторная ссылка с описанием не сбрасывает название и аватарку
+  await addBot("@AzkarBot\nАзкары\nУтренние и вечерние поминания");
+  assert.deepEqual(storedBots()[0], { ...storedBots()[0], title: "Азкары", description: "Утренние и вечерние поминания", photo: true, userId: 777 });
+  assert.equal(storedBots().length, 2);
+
+  // Админка ботов и «Первым»
+  await press("bt:top:quran_bot");
+  assert.deepEqual(storedBots().map((b) => b.key), ["quran_bot", "azkarbot"]);
+  calls = [];
+  await press("bt:list");
+  const panel = edits().at(-1);
+  assert.match(panel.text, /Админка · Полезные боты/);
+  assert.deepEqual(buttons(panel).map((b) => b.callback_data), ["bt:item:quran_bot", "bt:item:azkarbot", "bots", "ch:list"]);
+
+  // Для всех: /bots и кнопка в приветствии
+  calls = [];
+  await handleUpdate(msg("/bots", 5), tg);
+  assert.match(sent()[0].text, /Полезные боты/);
+  assert.deepEqual(buttons(sent()[0]).map((b) => b.url), ["https://t.me/quran_bot", "https://t.me/AzkarBot"]);
+  calls = [];
+  await handleUpdate(msg("/start", 5), tg);
+  assert.ok(buttons(sent()[0]).some((b) => b.callback_data === "bots"));
+
+  // Удаление
+  await press("bt:rm:quran_bot");
+  assert.deepEqual(storedBots().map((b) => b.key), ["azkarbot"]);
+});
+
+test("API мини-приложения: боты отдельным списком, аватарка бота", async () => {
+  await addBot("x", { forward_origin: { type: "user", sender_user: { id: 777, is_bot: true, first_name: "Азкары", username: "AzkarBot" }, date: 0 } });
+  await addBot("@quran_bot\nКоран");
+  const res = { headers: {}, statusCode: 0, setHeader(k, v) { this.headers[k] = v; }, end(b) { this.body = b; } };
+  await channelsApi({ method: "GET", url: "/api/channels", headers: { host: "bot.test" } }, res);
+  const data = JSON.parse(res.body);
+  assert.deepEqual(data.channels, []);
+  assert.deepEqual(data.bots.map((b) => [b.title, b.photo]), [
+    ["Азкары", "https://bot.test/api/channel-photo?b=azkarbot"],
+    ["Коран", null],
+  ]);
+  const photo = { headers: {}, statusCode: 0, setHeader(k, v) { this.headers[k] = v; }, end(b) { this.body = b; } };
+  calls = [];
+  await photoApi({ method: "GET", url: "/api/channel-photo?b=azkarbot", headers: {} }, photo);
+  assert.equal(photo.statusCode, 200);
+  assert.equal(calls.find((c) => c.method === "getFile").params.file_id, "bp-small");
 });

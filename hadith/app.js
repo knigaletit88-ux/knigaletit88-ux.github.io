@@ -127,6 +127,7 @@ const state = {
   langNames: LS.get("langNames", {}),
   bot: [null, "Hadis_1234bot"].includes(LS.get("bot", null)) ? CFG.bot : LS.get("bot"),
   channels: LS.get("channels", []),
+  bots: LS.get("bots", []),
 };
 
 // Имя бота берём у сервера бота: после смены токена ссылки сами ведут на нового бота
@@ -141,20 +142,22 @@ async function refreshBotName() {
   } catch { /* сервер недоступен — остаётся сохранённое имя */ }
 }
 
-// Полезные каналы ведёт админ в чате с ботом (/admin); список берём у сервера бота раз за запуск
-let channelsReq = null;
-function loadChannels() {
-  if (!channelsReq) {
-    channelsReq = fetch(`${CFG.server}/api/channels`)
+// Полезные каналы и боты ведёт админ в чате с ботом (/admin); списки берём у сервера бота раз за запуск
+let usefulReq = null;
+function loadUseful() {
+  if (!usefulReq) {
+    usefulReq = fetch(`${CFG.server}/api/channels`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((data) => {
-        state.channels = Array.isArray(data.channels) ? data.channels : [];
-        LS.set("channels", state.channels);
-        return state.channels;
+        for (const kind of ["channels", "bots"]) {
+          state[kind] = Array.isArray(data[kind]) ? data[kind] : [];
+          LS.set(kind, state[kind]);
+        }
+        return { channels: state.channels, bots: state.bots };
       });
-    channelsReq.catch(() => { channelsReq = null; });
+    usefulReq.catch(() => { usefulReq = null; });
   }
-  return channelsReq;
+  return usefulReq;
 }
 
 function saveFavs() {
@@ -425,7 +428,8 @@ const ROUTES = [
   [/^#\/fav$/, () => viewFavs()],
   [/^#\/lang$/, () => viewLangs()],
   [/^#\/about$/, () => viewAbout()],
-  [/^#\/channels$/, () => viewChannels()],
+  [/^#\/channels$/, () => viewUseful("channels")],
+  [/^#\/bots$/, () => viewUseful("bots")],
 ];
 
 async function onRoute() {
@@ -585,6 +589,7 @@ async function viewHome() {
         <div class="cats" id="cats">${Array.from({ length: 6 }, () => `<div class="skeleton" style="height:128px"></div>`).join("")}</div>
       </section>
       <section class="section" id="channels" hidden></section>
+      <section class="section" id="bots" hidden></section>
       <div class="share-banner">
         <p>«Указавший на благое получает такую же награду, как и совершивший его»</p>
         <button class="btn" data-act="shareApp">${I.send} Отправить друзьям</button>
@@ -606,17 +611,22 @@ async function viewHome() {
 
   if (state.query) runSearch(state.query);
 
-  const channelsBox = root.querySelector("#channels");
-  const showChannels = (list) => {
-    channelsBox.hidden = !list.length;
-    channelsBox.innerHTML = list.length ? `
-      <div class="section-head"><h2 class="section-title">Полезные каналы</h2><a class="section-link" data-go="#/channels">Все</a></div>
+  const showUseful = (kind, list) => {
+    const box = root.querySelector(`#${kind}`);
+    box.hidden = !list.length;
+    box.innerHTML = list.length ? `
+      <div class="section-head"><h2 class="section-title">${USEFUL[kind].title}</h2><a class="section-link" data-go="#/${kind}">Все</a></div>
       ${list.length > 2
-        ? `<div class="ch-scroll">${list.map((c) => `<a class="ch-card" data-ext="${esc(c.url)}">${channelAvatar(c)}<span class="ch-name">${esc(c.title)}</span><span class="ch-user">${c.username ? "@" + esc(c.username) : "канал"}</span></a>`).join("")}</div>`
+        ? `<div class="ch-scroll">${list.map((c) => `<a class="ch-card" data-ext="${esc(c.url)}">${channelAvatar(c)}<span class="ch-name">${esc(c.title)}</span><span class="ch-user">${c.username ? "@" + esc(c.username) : USEFUL[kind].one}</span></a>`).join("")}</div>`
         : channelRows(list)}` : "";
   };
-  showChannels(state.channels);
-  loadChannels().then((list) => isCurrent(seq) && showChannels(list)).catch(() => {});
+  showUseful("channels", state.channels);
+  showUseful("bots", state.bots);
+  loadUseful().then((lists) => {
+    if (!isCurrent(seq)) return;
+    showUseful("channels", lists.channels);
+    showUseful("bots", lists.bots);
+  }).catch(() => {});
 
   const lang = state.lang;
   DB.languages().then(() => {
@@ -951,7 +961,12 @@ async function viewLangs() {
   render();
 }
 
-// --------------------------------------------------------- полезные каналы
+// --------------------------------------------------- полезные каналы и боты
+
+const USEFUL = {
+  channels: { title: "Полезные каналы", one: "канал", lead: "Каналы, которые мы рекомендуем. Нажмите, чтобы открыть.", empty: "Скоро здесь появятся каналы", emptyText: "Мы готовим подборку полезных каналов — загляните чуть позже." },
+  bots: { title: "Полезные боты", one: "бот", lead: "Боты, которые мы рекомендуем. Нажмите, чтобы открыть.", empty: "Скоро здесь появятся боты", emptyText: "Мы готовим подборку полезных ботов — загляните чуть позже." },
+};
 
 const AVATAR_TONES = 4;
 function channelAvatar(c) {
@@ -973,20 +988,21 @@ const channelRows = (list) => `<div class="ch-list">${list.map((c) => `
 // Если аватарка не загрузилась — остаётся буква
 document.addEventListener("error", (e) => { if (e.target.matches?.(".ch-ava img")) e.target.remove(); }, true);
 
-async function viewChannels() {
+async function viewUseful(kind) {
   const seq = renderSeq;
-  const root = mount(`${topbar("Полезные каналы")}
-    <div class="page-head"><h2>Полезные каналы</h2><p>Каналы, которые мы рекомендуем. Нажмите, чтобы открыть.</p></div>
-    <div data-slot="main">${state.channels.length ? channelRows(state.channels) : `<div class="list">${skeletonList(3)}</div>`}</div>`);
+  const U = USEFUL[kind];
+  const root = mount(`${topbar(U.title)}
+    <div class="page-head"><h2>${U.title}</h2><p>${U.lead}</p></div>
+    <div data-slot="main">${state[kind].length ? channelRows(state[kind]) : `<div class="list">${skeletonList(3)}</div>`}</div>`);
   const slot = root.querySelector("[data-slot=main]");
   try {
-    const list = await loadChannels();
+    const list = (await loadUseful())[kind];
     if (!isCurrent(seq)) return;
     slot.innerHTML = list.length
       ? channelRows(list)
-      : `<div class="empty">${I.megaphone}<h3>Скоро здесь появятся каналы</h3><p>Мы готовим подборку полезных каналов — загляните чуть позже.</p><button class="btn" data-go="#/">На главную</button></div>`;
+      : `<div class="empty">${I.megaphone}<h3>${U.empty}</h3><p>${U.emptyText}</p><button class="btn" data-go="#/">На главную</button></div>`;
   } catch (err) {
-    if (isCurrent(seq) && !state.channels.length) slot.innerHTML = errorInline(err);
+    if (isCurrent(seq) && !state[kind].length) slot.innerHTML = errorInline(err);
   }
 }
 

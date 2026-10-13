@@ -3,6 +3,7 @@
 // (или UPSTASH_REDIS_REST_URL и UPSTASH_REDIS_REST_TOKEN — подходят оба варианта, в том числе с приставкой).
 
 const CHANNELS = "hadith:channels";
+const BOTS = "hadith:bots";
 const PENDING = (adminId) => `hadith:pending:${adminId}`;
 
 function redisEnv(env = process.env) {
@@ -88,14 +89,19 @@ export async function namazContext(chatId, userId) {
   return { waitingCity: state === "Place:waiting", known: Boolean(user) };
 }
 
-// [{key, title, description, url, username?, chatId?, photo, added}]
-export async function getChannels() {
+async function getList(key) {
   if (!hasStore()) return [];
-  const list = parse(await redis("GET", CHANNELS), []);
+  const list = parse(await redis("GET", key), []);
   return Array.isArray(list) ? list : [];
 }
 
+// Полезные каналы: [{key, title, description, url, username?, chatId?, photo, added}]
+export const getChannels = () => getList(CHANNELS);
 export const saveChannels = (list) => redis("SET", CHANNELS, JSON.stringify(list));
+
+// Полезные боты: [{key, title, description, url, username, userId?, photo, added}]
+export const getBots = () => getList(BOTS);
+export const saveBots = (list) => redis("SET", BOTS, JSON.stringify(list));
 
 // Канал, который админ прислал, но ещё не подтвердил кнопкой «Добавить» (хранится час)
 export const setPending = (adminId, channel) => redis("SET", PENDING(adminId), JSON.stringify(channel), "EX", "3600");

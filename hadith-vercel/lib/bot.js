@@ -1,10 +1,10 @@
 // Логика бота: отвечает на сообщения, кнопки и inline-запросы.
 import { createHash } from "node:crypto";
-import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendChannels, usersCommand } from "./channels.js";
+import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendBots, sendChannels, usersCommand } from "./channels.js";
 import { dailyId, getArabic, getHadith, neighbors, randomId, search, splitIntro } from "./hadith.js";
 import { HADITH_BUTTON, NAMAZ_BUTTON, NAMAZ_DOWN, forwardToNamaz, isNamaz, namazEnabled } from "./namaz.js";
 import { parts, snippet } from "./search.js";
-import { getChannels, trackUser } from "./store.js";
+import { getBots, getChannels, trackUser } from "./store.js";
 
 export const APP_URL = process.env.APP_URL || "https://knigaletit88-ux.github.io/hadith/";
 const SITE = (id) => `https://sarhaan.com/hadeeth/ru/${id}/`;
@@ -81,6 +81,7 @@ const HELP = `<b>Как пользоваться</b>
 🎲 /random — случайный хадис
 🕌 /namaz — время намаза для вашего города и уведомления о нём
 📢 /channels — полезные каналы
+🤖 /bots — полезные боты
 📤 В любом чате напишите <code>@{bot} слово</code>, чтобы отправить хадис другу`;
 
 function hadithMessage(h, title) {
@@ -170,7 +171,11 @@ async function sendArabic(tg, chatId, id, replyTo) {
 }
 
 async function sendGreeting(tg, msg, ctx) {
-  const channels = await getChannels().catch(() => []);
+  const [channels, bots] = await Promise.all([getChannels().catch(() => []), getBots().catch(() => [])]);
+  const useful = [
+    ...(channels.length ? [{ text: "📢 Полезные каналы", callback_data: "channels" }] : []),
+    ...(bots.length ? [{ text: "🤖 Полезные боты", callback_data: "bots" }] : []),
+  ];
   const share = shareUrl(`https://t.me/${ctx.username}`, "🌿 Энциклопедия хадисов Пророка ﷺ: хадисы с разъяснениями и полезными выводами на 72 языках.");
   await tg("sendMessage", {
     chat_id: msg.chat.id,
@@ -181,7 +186,7 @@ async function sendGreeting(tg, msg, ctx) {
         [appButton("📖 Открыть энциклопедию", "", ctx)],
         [{ text: "🌅 Хадис дня", callback_data: "day" }, { text: "🎲 Случайный", callback_data: "rnd" }],
         ...(namazEnabled() && ctx.private ? [[NAMAZ_BUTTON]] : []),
-        ...(channels.length ? [[{ text: "📢 Полезные каналы", callback_data: "channels" }]] : []),
+        ...(useful.length ? [useful] : []),
         [{ text: "💚 Поделиться ботом", url: share }],
       ],
     },
@@ -241,6 +246,7 @@ async function onMessage(tg, msg, ctx) {
   }
   if (cmd === "search") return rest.length ? sendSearch(tg, chatId, rest.join(" "), ctx) : undefined;
   if (cmd === "channels") return sendChannels(tg, chatId);
+  if (cmd === "bots") return sendBots(tg, chatId);
   if (cmd === "id") return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `Ваш Telegram ID: <code>${esc(msg.from?.id)}</code>` });
   if (cmd === "admin") return ctx.private ? adminCommand(tg, msg) : undefined;
   if (cmd === "users" || cmd === "stats") return ctx.private ? usersCommand(tg, msg) : undefined;
@@ -259,7 +265,7 @@ async function onMessage(tg, msg, ctx) {
 async function onCallback(tg, cq, ctx) {
   const chatId = cq.message?.chat?.id;
   const data = cq.data || "";
-  if (data.startsWith("ch:")) return adminCallback(tg, cq);
+  if (data.startsWith("ch:") || data.startsWith("bt:")) return adminCallback(tg, cq);
   await tg("answerCallbackQuery", { callback_query_id: cq.id });
   if (!chatId) return;
   if (data === "rnd") return sendHadith(tg, chatId, await randomId(), ctx);
@@ -268,6 +274,7 @@ async function onCallback(tg, cq, ctx) {
   if (data.startsWith("go:")) return showNeighbor(tg, cq, data.slice(3), ctx);
   if (data.startsWith("ar:")) return sendArabic(tg, chatId, data.slice(3), cq.message.message_id);
   if (data === "channels") return sendChannels(tg, chatId);
+  if (data === "bots") return sendBots(tg, chatId);
 }
 
 async function onInline(tg, iq, ctx) {
@@ -361,5 +368,6 @@ export const COMMANDS = [
   { command: "notify", description: "Уведомления о намазе" },
   { command: "app", description: "Открыть энциклопедию" },
   { command: "channels", description: "Полезные каналы" },
+  { command: "bots", description: "Полезные боты" },
   { command: "help", description: "Как пользоваться" },
 ];
