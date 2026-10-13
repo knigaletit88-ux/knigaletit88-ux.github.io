@@ -1,5 +1,6 @@
 // Логика бота: отвечает на сообщения, кнопки и inline-запросы.
 import { createHash } from "node:crypto";
+import { broadcastCallback, broadcastCommand, broadcastDraft, broadcastWaiting } from "./broadcast.js";
 import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendBots, sendChannels, usersCommand } from "./channels.js";
 import { dailyId, getArabic, getHadith, neighbors, randomId, search, splitIntro } from "./hadith.js";
 import { HADITH_BUTTON, NAMAZ_BUTTON, NAMAZ_DOWN, forwardToNamaz, isNamaz, namazEnabled } from "./namaz.js";
@@ -10,17 +11,23 @@ export const APP_URL = process.env.APP_URL || "https://knigaletit88-ux.github.io
 const SITE = (id) => `https://sarhaan.com/hadeeth/ru/${id}/`;
 const LIMIT = 4000;
 
+// Вызов Bot API: результат или undefined при ошибке. call.raw — весь ответ (нужен рассылке: код ошибки, «подождите»)
 export function telegram(token) {
-  return async (method, params = {}) => {
+  const raw = async (method, params = {}) => {
     const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!data.ok) console.error(`Telegram ${method}:`, data.description || res.status);
+    return res.json().catch(() => ({ ok: false, description: `HTTP ${res.status}` }));
+  };
+  const call = async (method, params = {}) => {
+    const data = await raw(method, params);
+    if (!data.ok) console.error(`Telegram ${method}:`, data.description);
     return data.result;
   };
+  call.raw = raw;
+  return call;
 }
 
 // Секрет для заголовка X-Telegram-Bot-Api-Secret-Token: так бот принимает запросы только от Telegram
@@ -222,8 +229,10 @@ async function sendSearch(tg, chatId, query, ctx) {
 }
 
 async function onMessage(tg, msg, ctx) {
-  // Админ пересылает пост из канала или присылает ссылку — предложить добавить в «Полезные каналы»
+  // Админ пересылает пост из канала или присылает ссылку — предложить добавить в «Полезные каналы».
+  // Если админ нажал «📣 Рассылка», его следующее сообщение — текст рассылки.
   if (ctx.private && isAdmin(msg.from?.id) && !(msg.text || "").startsWith("/")) {
+    if (await broadcastWaiting(msg.from.id).catch(() => false)) return broadcastDraft(tg, msg);
     const ref = channelRef(msg);
     if (ref) return adminMessage(tg, msg, ref);
   }
@@ -250,6 +259,7 @@ async function onMessage(tg, msg, ctx) {
   if (cmd === "id") return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `Ваш Telegram ID: <code>${esc(msg.from?.id)}</code>` });
   if (cmd === "admin") return ctx.private ? adminCommand(tg, msg) : undefined;
   if (cmd === "users" || cmd === "stats") return ctx.private ? usersCommand(tg, msg) : undefined;
+  if (cmd === "broadcast") return ctx.private ? broadcastCommand(tg, msg) : undefined;
   if (cmd || !ctx.private) return; // в группах отвечаем только на команды
   if (text === HADITH_BUTTON) return sendGreeting(tg, msg, ctx); // кнопка возврата из меню намаза
 
@@ -266,6 +276,7 @@ async function onCallback(tg, cq, ctx) {
   const chatId = cq.message?.chat?.id;
   const data = cq.data || "";
   if (data.startsWith("ch:") || data.startsWith("bt:")) return adminCallback(tg, cq);
+  if (data.startsWith("bc:")) return broadcastCallback(tg, cq);
   await tg("answerCallbackQuery", { callback_query_id: cq.id });
   if (!chatId) return;
   if (data === "rnd") return sendHadith(tg, chatId, await randomId(), ctx);
@@ -319,7 +330,10 @@ let botUsername = process.env.BOT_USERNAME || "";
 // Сообщение для раздела «Время намаза»? Пересланный админом пост канала — нет, даже если в нём картинка.
 async function namazUpdate(update) {
   const msg = update.message;
-  if (msg && isAdmin(msg.from?.id) && !(msg.text || "").startsWith("/") && channelRef(msg)) return false;
+  if (msg && isAdmin(msg.from?.id) && !(msg.text || "").startsWith("/")) {
+    // Пересланный пост канала или сообщение для рассылки — это админка, а не намаз (даже если в нём картинка)
+    if (channelRef(msg) || (await broadcastWaiting(msg.from.id))) return false;
+  }
   return isNamaz(update);
 }
 

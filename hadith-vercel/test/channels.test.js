@@ -136,7 +136,7 @@ test("админка: порядок, удаление, устаревшая к�
   await handleUpdate(msg("/admin"), tg);
   const panel = sent()[0];
   assert.match(panel.text, /В списке: <b>2<\/b>/);
-  assert.deepEqual(buttons(panel).map((b) => b.callback_data), ["ch:item:ilm_channel", "ch:item:sunna_daily", "channels", "bt:list", "ch:users"]);
+  assert.deepEqual(buttons(panel).map((b) => b.callback_data), ["ch:item:ilm_channel", "ch:item:sunna_daily", "channels", "bt:list", "bc:start", "ch:users"]);
 
   await press("ch:up:sunna_daily");
   assert.deepEqual(stored().map((c) => c.key), ["sunna_daily", "ilm_channel"]);

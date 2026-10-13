@@ -81,6 +81,17 @@ export async function userStats(now = Date.now()) {
   return { total, new1, new7, active1, active7, active30, namaz, since: first?.[1] ? Number(first[1]) * 1000 : null };
 }
 
+// Для рассылки: ID пользователей по порядку прихода (новые добавляются в конец, поэтому
+// рассылку можно продолжать с того же места) и их число
+export const userIds = async (start, stop) => (await redis("ZRANGE", JOINED, start, stop)) || [];
+export const usersCount = async () => Number(await redis("ZCARD", JOINED)) || 0;
+
+// Небольшие записи со сроком жизни (черновик рассылки, её ход) и замок «уже идёт»
+export const getJSON = async (key) => parse(await redis("GET", key), null);
+export const setJSON = (key, value, ttl) => redis("SET", key, JSON.stringify(value), "EX", String(ttl));
+export const delKeys = (...keys) => redis("DEL", ...keys);
+export const takeLock = async (key, ttl) => (await redis("SET", key, "1", "NX", "EX", String(ttl))) === "OK";
+
 // Раздел «Время намаза» (lib/namaz.js) хранит свои данные в этой же базе под ключами namaz:…
 // Отсюда они только читаются: ждёт ли бот от человека название города и настроен ли у него намаз.
 export async function namazContext(chatId, userId) {

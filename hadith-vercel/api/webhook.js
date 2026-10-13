@@ -1,6 +1,9 @@
 // Сюда Telegram присылает сообщения боту (вебхук).
 import { handleUpdate, telegram, webhookSecret } from "../lib/bot.js";
 
+// Рассылка из админки идёт прямо в ответ на нажатие «Отправить» — даём ей до минуты
+export const config = { maxDuration: 60 };
+
 async function readBody(req) {
   if (req.body && typeof req.body === "object") return req.body;
   if (typeof req.body === "string") return JSON.parse(req.body || "{}");

@@ -133,7 +133,7 @@ ${kind === "bt" ? HOW_TO_ADD_BOT : HOW_TO_ADD}`;
   if (list.length) keyboard.push([{ text: "👀 Как видят подписчики", callback_data: K.show }]);
   if (kind === "ch") {
     keyboard.push([{ text: `🤖 Полезные боты${count ? ` (${count})` : ""}`, callback_data: "bt:list" }]);
-    keyboard.push([{ text: "👥 Пользователи", callback_data: "ch:users" }]);
+    keyboard.push([{ text: "📣 Рассылка", callback_data: "bc:start" }, { text: "👥 Пользователи", callback_data: "ch:users" }]);
   } else {
     keyboard.push([{ text: "« Полезные каналы", callback_data: "ch:list" }]);
   }
