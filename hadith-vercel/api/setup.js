@@ -35,6 +35,6 @@ export default async function handler(req, res) {
   await tg("setMyCommands", { commands: COMMANDS });
   res.statusCode = ok ? 200 : 500;
   res.end(ok
-    ? page("✅ Бот подключён", `<p>Бот <b>@${me.username}</b> теперь отвечает через Vercel.</p><p>Откройте Telegram и отправьте боту <code>/start</code>.</p><p style="font-size:13px;opacity:.6">Адрес вебхука: ${url}</p>`)
+    ? page("✅ Бот подключён", `<p>Бот <b>@${me.username}</b> подключён к этому серверу.</p><p>Откройте Telegram и отправьте боту <code>/start</code>.</p><p style="font-size:13px;opacity:.6">Адрес вебхука: ${url}</p>`)
     : page("Не получилось", "<p>Telegram не принял адрес вебхука. Откройте эту страницу ещё раз через минуту.</p>"));
 }

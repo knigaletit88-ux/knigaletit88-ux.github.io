@@ -1,0 +1,5 @@
+.env
+.deploy.env
+url.txt
+deno.jsonc
+deno.lock
