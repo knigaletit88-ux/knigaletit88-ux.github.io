@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { broadcastCallback, broadcastCommand, broadcastDraft, broadcastWaiting } from "./broadcast.js";
 import { adminCallback, adminCommand, adminMessage, channelRef, isAdmin, sendBots, sendChannels, usersCommand } from "./channels.js";
 import { dailyId, getArabic, getHadith, neighbors, randomId, search, splitIntro } from "./hadith.js";
-import { HADITH_BUTTON, NAMAZ_BUTTON, NAMAZ_DOWN, forwardToNamaz, isNamaz, namazEnabled } from "./namaz.js";
+import { HADITH_BUTTON, NAMAZ_BUTTON, NAMAZ_DOWN, isNamaz, namazEnabled, toNamaz } from "./namaz.js";
 import { parts, snippet } from "./search.js";
 import { getBots, getChannels, trackUser } from "./store.js";
 
@@ -356,7 +356,7 @@ async function dispatch(update, tg, token) {
   const ctx = { username: botUsername, private: !chat || chat.type === "private" };
   if (await namazUpdate(update).catch(() => false)) {
     try {
-      return await forwardToNamaz(update, token);
+      return await toNamaz(update, tg, token);
     } catch (err) {
       console.error("Раздел намаза:", err);
       if (update.callback_query) await tg("answerCallbackQuery", { callback_query_id: update.callback_query.id });

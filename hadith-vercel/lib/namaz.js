@@ -1,18 +1,21 @@
-// «Время намаза» — второй раздел бота. Он живёт в отдельном проекте Vercel (namaz-bot, Python)
-// и отвечает от имени этого же бота. Здесь решается, какие сообщения относятся к намазу,
-// и они передаются туда как есть; всё остальное по-прежнему обрабатывает бот хадисов.
+// «Время намаза» — второй раздел бота. Здесь решается, какие сообщения относятся к намазу; их
+// обрабатывает раздел из папки namaz/ (перенос Python-проекта namaz-bot, который жил на Vercel),
+// всё остальное — бот хадисов.
 import { createHash } from "node:crypto";
+import { handleNamaz } from "../namaz/bot.js";
+import { scheduleTick } from "../namaz/tick.js";
 import { namazContext } from "./store.js";
 
-// Адрес раздела намаза. NAMAZ_URL=off в настройках Vercel отключает раздел целиком.
-export const NAMAZ_URL = (process.env.NAMAZ_URL ?? "https://namaz-bot-eight.vercel.app").replace(/\/+$/, "");
-export const namazEnabled = () => /^https:\/\//.test(NAMAZ_URL);
+// По умолчанию раздел встроен в этого бота. NAMAZ_URL=https://… — передавать обновления отдельному
+// серверу раздела (так было на Vercel), NAMAZ_URL=off — отключить раздел целиком.
+export const NAMAZ_URL = (process.env.NAMAZ_URL ?? "").replace(/\/+$/, "");
+export const namazEnabled = () => NAMAZ_URL !== "off";
 
 export const NAMAZ_BUTTON = { text: "🕌 Время намаза", callback_data: "nz:menu" };
 export const HADITH_BUTTON = "📖 Хадисы"; // кнопка в меню намаза: вернуться к хадисам
 export const NAMAZ_DOWN = "⚠️ Раздел «Время намаза» сейчас недоступен. Попробуйте, пожалуйста, чуть позже.";
 
-// То, что раздел намаза считает своим (должно совпадать с namaz/handlers.py и namaz/keyboards.py)
+// То, что раздел намаза считает своим (должно совпадать с namaz/bot.js и namaz/keyboards.js)
 const CALLBACKS = /^(nz|day|ml|mo|mf|n|s|c|place):/;
 const COMMANDS = new Set(["namaz", "tomorrow", "month", "calc", "notify", "calendar", "settings"]);
 const MENU = new Set(["🕌 Сегодня", "🌄 Завтра", "🗓 Месяц", "🧮 Калькулятор", "🔔 Уведомления", "⚙️ Настройки", "📷 Мой календарь"]);
@@ -43,8 +46,15 @@ export async function isNamaz(update) {
   return image || DATE.test(text) || TWO_TIMES.test(text) || looksLikeTimetable(text);
 }
 
-// Секрет, по которому раздел намаза узнаёт своего: тот же расчёт, что в namaz/cloud.py (secret("webhook"))
+// Секрет, по которому отдельный сервер раздела узнаёт своего: тот же расчёт, что в namaz/cloud.py (secret("webhook"))
 export const namazSecret = (token) => createHash("sha256").update(`webhook:${token}`).digest("hex").slice(0, 40);
+
+/** Обновление — разделу намаза: встроенному или (NAMAZ_URL) отдельному серверу. */
+export async function toNamaz(update, tg, token) {
+  if (/^https:\/\//.test(NAMAZ_URL)) return forwardToNamaz(update, token);
+  // Настройки изменились — ближайшее уведомление могло стать другим: пусть будильник пересчитает.
+  if (await handleNamaz(update, tg, token)) await scheduleTick(Date.now() + 60_000, token).catch(() => {});
+}
 
 export async function forwardToNamaz(update, token) {
   const res = await fetch(`${NAMAZ_URL}/api/webhook`, {

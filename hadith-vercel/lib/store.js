@@ -18,7 +18,7 @@ function redisEnv(env = process.env) {
 
 export const hasStore = () => Boolean(redisEnv());
 
-async function redis(...command) {
+export async function redis(...command) {
   const env = redisEnv();
   if (!env) throw new Error("Хранилище не подключено");
   const res = await fetch(env.url, {
@@ -32,7 +32,7 @@ async function redis(...command) {
 }
 
 // Несколько команд одним запросом: [[команда, …], …] → [результат, …]
-async function pipeline(commands) {
+export async function pipeline(commands) {
   const env = redisEnv();
   if (!env) throw new Error("Хранилище не подключено");
   const res = await fetch(`${env.url}/pipeline`, {

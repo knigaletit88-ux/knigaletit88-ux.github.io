@@ -1,0 +1,11 @@
+{
+  "unstable": ["cron"],
+  "nodeModulesDir": "none",
+  "deploy": {
+    "org": "knigaletit88",
+    "app": "hadith"
+  }
+}
+
+
+

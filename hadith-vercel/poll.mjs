@@ -13,6 +13,7 @@ if (existsSync(ENV)) {
 }
 // настройки бот читает при загрузке, поэтому он подключается после .env
 const { handleUpdate, telegram } = await import("./lib/bot.js");
+const { runTick } = await import("./namaz/tick.js");
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -24,6 +25,8 @@ const me = await tg("getMe");
 if (!me) process.exit(1);
 await tg("deleteWebhook");
 console.log(`@${me.username} отвечает с ноутбука. Ctrl+C — остановить.`);
+// уведомления о намазе — раз в минуту, как будильник на сервере
+setInterval(() => runTick(tg, token).catch((err) => console.error("Будильник намаза:", err.message)), 60_000);
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let offset = 0;

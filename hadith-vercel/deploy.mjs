@@ -6,6 +6,7 @@
 //   BOT_TOKEN=…                  токен бота от @BotFather
 //   ADMIN_IDS=…                  Telegram ID админов через запятую
 //   KV_REST_API_URL=…, KV_REST_API_TOKEN=…   база Upstash Redis (каналы, пользователи, рассылки)
+//   QSTASH_TOKEN=…               необязательно: будильник уведомлений о намазе точно в минуту (console.upstash.com → QStash)
 // Любая другая строка (NAMAZ_URL, BOT_USERNAME, …) тоже уходит в настройки приложения.
 //
 // На сервер уходит только код (api/, lib/, server.js, index.html): копия собирается во временной папке
@@ -55,7 +56,7 @@ console.log("Deno Deploy:", org);
 function publish() {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
-  for (const path of ["server.js", "index.html", "package.json", "api", "lib"]) cpSync(`${HERE}${path}`, `${OUT}/${path}`, { recursive: true });
+  for (const path of ["server.js", "index.html", "package.json", "deno.json", "api", "lib", "namaz"]) cpSync(`${HERE}${path}`, `${OUT}/${path}`, { recursive: true });
   const apps = deno(["apps", "list", "--org", org], { allowFail: true }).json;
   const { json } = JSON.stringify(apps || "").includes(`"${APP}"`)
     ? deno(["--org", org, "--app", APP, "--prod", "."], { cwd: OUT })
@@ -68,10 +69,11 @@ function publish() {
 }
 
 console.log("Выкладываю…");
-publish();
+const first = publish();
 
 // Настройки — файлом, а не в командной строке; файл сразу удаляется. Перевыкладка нужна, чтобы бот их увидел.
-const vars = Object.entries(env).filter(([name]) => name !== "DENO_DEPLOY_TOKEN");
+// APP_HOST — постоянный адрес: по нему будильник QStash находит бота
+const vars = [...Object.entries(env).filter(([name]) => name !== "DENO_DEPLOY_TOKEN"), ["APP_HOST", new URL(first).host]];
 writeFileSync(`${HERE}.deploy.env`, vars.map(([k, v]) => `${k}=${v}`).join("\n") + "\n", "utf8");
 try {
   deno(["env", "load", "--replace", "--org", org, "--app", APP, ".deploy.env"]);
