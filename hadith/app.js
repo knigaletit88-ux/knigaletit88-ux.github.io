@@ -7,7 +7,7 @@ const CFG = {
   api: "https://hadeethenc.com/api/v1",
   mirror: "./data",
   bot: "s_unnabot", // запасное имя; настоящее приходит с сервера бота (/api/info)
-  server: "https://hadith.knigaletit88.deno.net", // бот на Deno Deploy: имя бота и полезные каналы
+  server: "https://hadith.185-240-121-77.sslip.io", // бот на своём сервере (Litnets): имя бота и полезные каналы
   appUrl: "https://knigaletit88-ux.github.io/hadith/",
   siteHome: "https://sarhaan.com/hadeeth/ru/",
   siteHadith: (lang, id) => `https://sarhaan.com/hadeeth/${lang}/${id}/`,
